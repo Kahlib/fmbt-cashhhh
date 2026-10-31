@@ -1,0 +1,38 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Secrets and real data never go in the repo (fmbt-security skill, section 7)
+.env*
+!.env.example
+private-data/
+
+# Local tool folders
+.wrangler/
+supabase/.temp/
+supabase/.branches/
+
+# The repo is public, so personal planning files for AI tools stay on this computer
+CLAUDE.md
+.claude/

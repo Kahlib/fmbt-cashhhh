@@ -1,0 +1,21 @@
+// Cloudflare's settings for hosting FMBT Cashhhh. The site is static files only:
+// no Worker code runs, so there's no server code to attack.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fmbt-cashhhh",
+  "compatibility_date": "2026-10-26",
+  // Don't send Wrangler usage data to Cloudflare.
+  "send_metrics": false,
+  // Only FMBTCashhhh.com serves the app: no spare workers.dev address, no preview addresses.
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    // Vite builds the site into dist/.
+    "directory": "./dist",
+    // Any address that isn't a file (like /history) gets index.html, so React can route it.
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "fmbtcashhhh.com", "custom_domain": true }
+  ]
+}

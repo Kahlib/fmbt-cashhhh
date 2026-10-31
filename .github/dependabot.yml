@@ -1,0 +1,12 @@
+# Dependabot checks npm every week and opens a pull request for each update.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Wait 3 days before suggesting a new version, the same rule as .npmrc.
+    # Security fixes skip the wait.
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 5
