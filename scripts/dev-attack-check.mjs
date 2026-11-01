@@ -164,10 +164,12 @@ if (!tokenA || !tokenB) {
   check('D18', 'The private schema can\'t be reached through the API at all', r.status >= 400, say(r));
 
   // ---------- 4. Emails that must never be sent ----------
+  // Supabase allows one reset or sign-in link email per person per 60 seconds,
+  // so each request goes to a different test account. Both must reach the hook.
   const reset = await call('POST', '/auth/v1/recover', { body: { email: EMAIL_A } });
-  const link = await call('POST', '/auth/v1/otp', { body: { email: EMAIL_A, create_user: false } });
-  check('D19', 'Password reset and sign-in link requests get answered (the hook then sends nothing)',
-    reset.status < 500 && link.status < 500, `${say(reset)} / ${say(link)}`);
+  const link = await call('POST', '/auth/v1/otp', { body: { email: EMAIL_B, create_user: false } });
+  check('D19', 'Password reset and sign-in link requests reach the hook, which then sends nothing',
+    reset.status === 200 && link.status === 200, `${say(reset)} / ${say(link)}`);
 }
 
 // ---------- Report ----------
