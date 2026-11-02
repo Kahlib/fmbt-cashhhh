@@ -33,3 +33,7 @@ private-data/
 .wrangler/
 supabase/.temp/
 supabase/.branches/
+
+# The repo is public, so personal planning files for AI tools stay on this computer
+CLAUDE.md
+.claude/
