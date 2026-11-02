@@ -1,8 +1,9 @@
 # Security headers Cloudflare sends with every file of the site.
 # The fmbt-security skill explains each one. Lines starting with # are comments.
-# connect-src gains the production Supabase address in step 7, when the app first talks to it.
+# connect-src allows the site itself and production Supabase. scripts/check-env.ts checks it matches .env.production.
+# Cache-Control keeps Cloudflare's default caching and adds no-transform, so Cloudflare can't rewrite pages or inject scripts.
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://gxminxbyiuzueomsdgem.supabase.co; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
@@ -11,3 +12,4 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   X-Robots-Tag: noindex, nofollow
+  Cache-Control: public, max-age=0, must-revalidate, no-transform

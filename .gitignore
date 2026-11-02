@@ -26,13 +26,10 @@ dist-ssr
 # Secrets and real data never go in the repo (fmbt-security skill, section 7)
 .env*
 !.env.example
+!.env.production
 private-data/
 
 # Local tool folders
 .wrangler/
 supabase/.temp/
 supabase/.branches/
-
-# The repo is public, so personal planning files for AI tools stay on this computer
-CLAUDE.md
-.claude/

@@ -49,8 +49,7 @@ async function call(method, path, { token, body, headers = {} } = {}) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),  });
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }

@@ -10,8 +10,8 @@ A private tracker for Premier League and Champions League moneyline parlays. Bet
 
 ```
 npm ci
-npm run check   # lint, database tests, then build
-npm run dev
+npm run check   # lint, env check, database tests, unit tests, then build
+npm run dev     # needs .env.development.local with the dev project's two values
 ```
 
 ## Security
@@ -19,3 +19,4 @@ npm run dev
 - `public/_headers` holds the security headers, including a strict content security policy with Trusted Types.
 - `supabase/migrations` holds the database. `npm run test:schema` runs 73 tests that try to break its access rules.
 - `.npmrc` refuses package versions less than 3 days old and blocks install scripts.
+- `scripts/check-env.ts` makes sure the only values a build can see are production's address and publishable key, which are public.

@@ -1,8 +1,30 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
+  "plugins": ["react", "typescript", "oxc", "unicorn"],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+
+    // fmbt-security, section 8: React escapes text, and nothing bypasses it.
+    "react/no-danger": "error",
+    // No javascript: links, which run code when clicked.
+    "react/jsx-no-script-url": "error",
+    "no-script-url": "error",
+    // No code built from strings.
+    "no-eval": "error",
+    "no-new-func": "error",
+    // Nothing sensitive in the console. Live builds drop console calls too.
+    "no-console": "error",
+
+    // fmbt-security, section 3: keys and sessions live in memory only.
+    "no-restricted-globals": ["error", "localStorage", "sessionStorage", "indexedDB"],
+    "unicorn/no-document-cookie": "error"
+  },
+  "overrides": [
+    {
+      // Scripts, tests and server functions print their results on purpose.
+      "files": ["scripts/**", "tests/**", "supabase/functions/**"],
+      "rules": { "no-console": "off" }
+    }
+  ]
 }
