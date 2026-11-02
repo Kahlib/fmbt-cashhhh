@@ -17,6 +17,7 @@ npm run dev     # needs .env.development.local with the dev project's two values
 ## Security
 
 - `public/_headers` holds the security headers, including a strict content security policy with Trusted Types.
-- `supabase/migrations` holds the database. `npm run test:schema` runs 73 tests that try to break its access rules.
+- `supabase/migrations` holds the database. `npm run test:schema` runs every migration in order, then 77 tests that try to break its access rules.
 - `.npmrc` refuses package versions less than 3 days old and blocks install scripts.
 - `scripts/check-env.ts` makes sure the only values a build can see are production's address and publishable key, which are public.
+- `supabase/functions/recover` is the Forgot password server function. It checks a recovery proof and sets the new password, and gives the same answer to every failure.

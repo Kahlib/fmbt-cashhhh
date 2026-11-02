@@ -1,14 +1,14 @@
 // FMBT Cashhhh: tests that try to break the database (step 5, 26 October 2026).
-// Runs fmbt-schema-v1.sql in a real Postgres (PGlite, PostgreSQL 17) on top of
-// a small stand-in for what a fresh Supabase project already has, then checks
-// every access rule from the outside: signed out, as you, as a friend, with a
-// secret key, as Supabase's sign-up system, and as the owner.
+// Runs every migration in supabase/migrations, oldest first, in a real
+// Postgres (PGlite, PostgreSQL 17) on top of a small stand-in for what a
+// fresh Supabase project already has. Then it checks every access rule from
+// the outside: signed out, as you, as a friend, with a secret key, as
+// Supabase's sign-up system, and as the owner.
 //
-// Run it (Node 24):
-//   npm install @electric-sql/pglite@0.3
-//   node fmbt-schema-tests.mjs fmbt-schema-v1.sql
+// Run it with `npm run test:schema`, which `npm run check` does.
 import { PGlite } from '@electric-sql/pglite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 
 // Stand-in for a fresh Supabase project: its roles, its permissive defaults
@@ -40,12 +40,25 @@ create function auth.uid() returns uuid language sql stable as $$
   )::uuid
 $$;
 grant execute on function auth.uid() to anon, authenticated, service_role, supabase_auth_admin;
+-- The whole sign-in token's claims, as Supabase's own auth.jwt() returns them.
+create function auth.jwt() returns jsonb language sql stable as $$
+  select coalesce(
+    nullif(current_setting('request.jwt.claim', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')
+  )::jsonb
+$$;
+grant execute on function auth.jwt() to anon, authenticated, service_role, supabase_auth_admin;
 `;
 
-const schemaPath = process.argv[2] ?? 'fmbt-schema-v1.sql';
+// A folder runs every .sql file in it, in name order, which is date order.
+// A single file still works, for running one migration on its own.
+const schemaPath = process.argv[2] ?? 'supabase/migrations';
+const migrations = statSync(schemaPath).isDirectory()
+  ? readdirSync(schemaPath).filter(name => name.endsWith('.sql')).sort().map(name => join(schemaPath, name))
+  : [schemaPath];
 const db = new PGlite();
 await db.exec(SUPABASE_STAND_IN);
-await db.exec(readFileSync(schemaPath, 'utf8'));
+for (const file of migrations) await db.exec(readFileSync(file, 'utf8'));
 
 const A = randomUUID();   // the owner (app admin)
 const B = randomUUID();   // a friend
@@ -58,9 +71,11 @@ const iv = () => b64(12);
 const ct = (n = 1040) => b64(n);
 const wrapped = () => b64(48);
 
-async function as(role, uid, sql, params = []) {
+// `claims` stands in for the rest of the sign-in token, such as its amr list.
+async function as(role, uid, sql, params = [], claims = null) {
   await db.exec('reset role');
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [uid ?? '']);
+  await db.query("select set_config('request.jwt.claims', $1, false)", [claims ? JSON.stringify({ sub: uid, ...claims }) : '']);
   if (role !== 'postgres') await db.exec(`set role ${role}`);
   try {
     const r = await db.query(sql, params);
@@ -279,6 +294,35 @@ r = await as('authenticated', A, 'select public.recovery_check($1, $2)', ['owner
 check('T77', 'A signed-in user can\'t call the recovery check', denied(r), r.error);
 r = await as('postgres', null, 'select count(*)::int as n from private.recovery_attempts where user_id is null');
 check('T78', 'Tries against unknown emails leave nothing behind', r.ok && r.rows[0].n === 0);
+
+// ---------- A new recovery key after a recent password sign-in (step 7.3) ----------
+// The friend's account sets a first proof, then tries to replace it with
+// different sign-in claims. now() is fixed for the whole query, so "seconds
+// ago" means seconds before the test runs.
+const hashOf = () => createHash('sha256').update(randomBytes(32)).digest('hex');
+const secondsAgo = s => Math.floor(Date.now() / 1000) - s;
+const amr = (method, timestamp) => ({ amr: [{ method, timestamp }] });
+r = await as('authenticated', B, 'select public.set_recovery_proof($1)', [hashOf()]);
+const freshSignIn = await as('authenticated', B, 'select public.set_recovery_proof($1)', [hashOf()], amr('password', secondsAgo(60)));
+check('T79', 'A password sign-in in the last 5 minutes can replace the proof', r.ok && freshSignIn.ok, r.error ?? freshSignIn.error);
+r = await as('authenticated', B, 'select public.set_recovery_proof($1)', [hashOf()], amr('password', secondsAgo(400)));
+check('T79a', 'A sign-in from more than 5 minutes ago can\'t', failsWith(r, /Bad recovery proof/), r.error ?? 'was allowed');
+const odd = [
+  amr('otp', secondsAgo(10)),                                  // another sign-in method
+  amr('password', secondsAgo(-3600)),                          // a time an hour from now
+  amr('password', String(secondsAgo(10))),                     // a time written as text
+  { amr: 'password' },                                         // not a list
+  { amr: [{ method: 'password' }] },                           // no time at all
+];
+const oddResults = [];
+for (const claims of odd) oddResults.push(await as('authenticated', B, 'select public.set_recovery_proof($1)', [hashOf()], claims));
+check('T79b', 'Another sign-in method, a future time or a garbled claim can\'t', oddResults.every(x => failsWith(x, /Bad recovery proof/)),
+  JSON.stringify(oddResults.map(x => x.error ?? 'allowed')));
+r = await as('postgres', null, `select
+  has_function_privilege('anon', 'public.set_recovery_proof(text, text)', 'execute') as anon_f,
+  has_function_privilege('authenticated', 'public.set_recovery_proof(text, text)', 'execute') as auth_f,
+  has_function_privilege('service_role', 'public.set_recovery_proof(text, text)', 'execute') as svc_f`);
+check('T79c', 'The new version keeps exactly its old permissions: signed-in users only', r.ok && !r.rows[0].anon_f && r.rows[0].auth_f && !r.rows[0].svc_f, JSON.stringify(r.rows?.[0] ?? r.error));
 
 // ---------- Invites ----------
 r = await as('authenticated', B, 'select * from public.invite_list()');
