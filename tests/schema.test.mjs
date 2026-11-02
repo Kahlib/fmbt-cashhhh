@@ -173,21 +173,38 @@ const p2 = (await addWrap(A, 'password', 2)).rows[0].id;
 const rc1 = (await addWrap(A, 'recovery', 1)).rows[0].id;
 r = await as('authenticated', A, 'delete from public.key_wraps where id = $1', [p1]);
 check('T31', 'Deleting a key wrap directly is refused', denied(r), r.error ?? `deleted ${r.affected}`);
-r = await as('authenticated', A, 'select public.delete_old_key_wraps() as n');
+// Since step 7.4, each key change clears only its own kind of wrap.
+r = await as('authenticated', A, "select public.delete_old_key_wraps('password') as n");
 let left1 = await as('postgres', null, 'select id from public.key_wraps where user_id = $1', [A]);
 const ids1 = left1.rows.map(x => x.id);
-check('T32', 'Clearing old wraps removes only the older password wrap',
+check('T32', 'Clearing old password wraps removes only the older password wrap',
   r.ok && r.rows[0].n === 1 && ids1.includes(p2) && ids1.includes(rc1) && !ids1.includes(p1), r.error ?? JSON.stringify(ids1));
-r = await as('authenticated', A, 'select public.delete_old_key_wraps() as n');
-check('T33', 'Clearing again removes nothing: your newest of each kind always survives', r.ok && r.rows[0].n === 0, r.error);
+r = await as('authenticated', A, "select public.delete_old_key_wraps('password') as n");
+const again = await as('authenticated', A, "select public.delete_old_key_wraps('recovery') as n");
+check('T33', 'Clearing again removes nothing: your newest of each kind always survives',
+  r.ok && r.rows[0].n === 0 && again.ok && again.rows[0].n === 0, r.error ?? again.error);
 await addWrap(A, 'password', 3);
-r = await as('authenticated', B, 'select public.delete_old_key_wraps() as n');
+r = await as('authenticated', B, "select public.delete_old_key_wraps('password') as n");
 left1 = await as('postgres', null, 'select id from public.key_wraps where user_id = $1', [A]);
 check('T34', "A friend clearing their old wraps doesn't touch yours", r.ok && r.rows[0].n === 0 && left1.rows.some(x => x.id === p2), r.error);
 r = await as('authenticated', A, "update public.key_wraps set kind = 'recovery' where id = $1", [p2]);
 check('T35', 'Editing a key wrap is refused', denied(r), r.error);
-r = await as('anon', null, 'select public.delete_old_key_wraps()');
+r = await as('anon', null, "select public.delete_old_key_wraps('password')");
 check('T36', 'Signed out: clearing key wraps is refused', denied(r), r.error);
+const rc2 = (await addWrap(A, 'recovery', 2)).rows[0].id;
+r = await as('authenticated', A, "select public.delete_old_key_wraps('password') as n");
+let kinds = await as('postgres', null, "select id from public.key_wraps where user_id = $1 and kind = 'recovery'", [A]);
+const keptBoth = kinds.rows.some(x => x.id === rc1) && kinds.rows.some(x => x.id === rc2);
+r = await as('authenticated', A, "select public.delete_old_key_wraps('recovery') as n");
+kinds = await as('postgres', null, "select id from public.key_wraps where user_id = $1 and kind = 'recovery'", [A]);
+check('T37', 'Clearing password wraps never touches recovery wraps, and clearing recovery wraps keeps the newest',
+  keptBoth && r.ok && r.rows[0].n === 1 && kinds.rows.length === 1 && kinds.rows[0].id === rc2, r.error ?? JSON.stringify(kinds.rows));
+const unknownKind = await as('authenticated', A, "select public.delete_old_key_wraps('both')");
+const noKind = await as('authenticated', A, 'select public.delete_old_key_wraps(null)');
+const oldStyle = await as('authenticated', A, 'select public.delete_old_key_wraps()');
+check('T38', 'An unknown kind or no kind is refused, and the old clear-everything version is gone',
+  failsWith(unknownKind, /Unknown key wrap kind/) && failsWith(noKind, /Unknown key wrap kind/) && failsWith(oldStyle, /does not exist/),
+  [unknownKind.error, noKind.error, oldStyle.error].join(' / '));
 
 // ---------- Audit log ----------
 const addAudit = (uid, seq, prev) => as('authenticated', uid,
@@ -337,12 +354,15 @@ const list2 = await as('authenticated', A, 'select * from public.invite_list()')
 check('T83', 'You remove an invite', r.ok && !list2.rows.some(x => x.email === 'new.friend@example.com'), r.error);
 
 // ---------- Storage limits ----------
+// Adds wraps until the limit stops them, then checks it stopped at exactly 200.
 let capHit = null;
-for (let i = 4; i <= 201 && !capHit; i++) {
+for (let i = 4; i <= 300 && !capHit; i++) {
   const x = await addWrap(A, 'password', i);
   if (!x.ok) capHit = { i, error: x.error };
 }
-check('T90', 'Key wraps stop at 200 per account', capHit && /Storage limit/.test(capHit.error), JSON.stringify(capHit));
+const wrapCount = await as('postgres', null, 'select count(*)::int as n from public.key_wraps where user_id = $1', [A]);
+check('T90', 'Key wraps stop at 200 per account', capHit && /Storage limit/.test(capHit.error) && wrapCount.rows[0].n === 200,
+  JSON.stringify({ capHit, wraps: wrapCount.rows[0]?.n }));
 let byteHit = null;
 const big = b64(262000);                                  // 349,336 base64 characters
 const fits = Math.floor(2000000 / big.length);            // 5 rows fit under 2 MB
