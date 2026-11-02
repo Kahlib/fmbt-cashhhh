@@ -24,7 +24,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.88.0",
     "supabase": "^2.122.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vite": "^8.3.4",
     "wrangler": "^4.152.0"
   },
