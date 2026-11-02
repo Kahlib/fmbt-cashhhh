@@ -10,3 +10,9 @@ updates:
     cooldown:
       default-days: 3
     open-pull-requests-limit: 5
+    ignore:
+      # PGlite 0.5 and later run Postgres 18, but Supabase runs 17, and the
+      # schema tests should run on the same version. Remove this when
+      # Supabase moves to Postgres 18.
+      - dependency-name: "@electric-sql/pglite"
+        versions: [">=0.5.0"]
