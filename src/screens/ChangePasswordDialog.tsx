@@ -66,7 +66,7 @@ export function ChangePasswordDialog({ api, unlocked, onClose, onChanged }: {
   return (
     <Dialog title="Change password" onClose={onClose}
       sub="Type your current password first. It proves it's you, and it unlocks your data key so it can be locked again under the new one.">
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         {/* Password managers look for the account's name next to its password. */}
         <input type="email" autoComplete="username" value={unlocked.email} readOnly hidden />
         <div className="form">

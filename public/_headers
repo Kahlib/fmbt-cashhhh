@@ -2,13 +2,14 @@
 # The fmbt-security skill explains each one. Lines starting with # are comments.
 # connect-src allows the site itself and production Supabase. scripts/check-env.ts checks it matches .env.production.
 # Cache-Control keeps Cloudflare's default caching and adds no-transform, so Cloudflare can't rewrite pages or inject scripts.
+# Permissions-Policy switches off browser features the app never uses. browsing-topics came out in November 2026: Chrome is removing the Topics API, and already warns that it doesn't know the name.
 /*
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://gxminxbyiuzueomsdgem.supabase.co; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types 'none'
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
-  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
   X-Robots-Tag: noindex, nofollow

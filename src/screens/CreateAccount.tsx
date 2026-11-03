@@ -65,7 +65,7 @@ export function CreateAccount({ api, onCreated, onSignIn, onStartFromBackup }: {
       <StepBar step={1} label="Create your account" />
       <ScreenTitle sub="You need an invite. Your password never leaves this browser. It becomes the key that locks your bets.">Set up your account</ScreenTitle>
 
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         <div className="form">
           <TextField label="Email" type="email" autoComplete="username" value={email} onChange={setEmail} message={emailMessage} />
           <PasswordField label="Password" autoComplete="new-password" value={password} onChange={setPassword}

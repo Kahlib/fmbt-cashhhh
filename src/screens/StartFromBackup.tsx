@@ -116,7 +116,7 @@ export function StartFromBackup({ api, onStarted, onSetUp, onSignIn }: {
       <StepBar step={1} label="Start from a backup" />
       <ScreenTitle sub="Your new account takes over the backup's key, so everything in it opens again. You still need an invite.">Start from a backup</ScreenTitle>
 
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         <div className="form">
           <TextField label="Email" type="email" autoComplete="username" value={email} onChange={setEmail} message={emailMessage} />
 

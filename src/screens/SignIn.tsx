@@ -22,8 +22,10 @@ export function SignIn({ api, notice, onUnlocked, onForgot, onSetUp }: {
   const [problem, setProblem] = useState<Problem | null>(null)
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    // The app handles the form itself. Nothing is posted anywhere, which the
-    // content security policy (form-action 'none') would refuse anyway.
+    // The app handles the form itself, so nothing is posted anywhere. If a
+    // native submit ever slipped through, method="post" keeps the fields out
+    // of the address, and the content security policy (form-action 'none')
+    // refuses to send it at all.
     event.preventDefault()
     if (busy) return
     setBusy(true)
@@ -55,7 +57,7 @@ export function SignIn({ api, notice, onUnlocked, onForgot, onSetUp }: {
       <ScreenTitle focus={false} sub="Your password unlocks your bets in this tab. Everywhere else, they stay encrypted.">Sign in</ScreenTitle>
       {notice !== undefined && <Note><p>{notice}</p></Note>}
 
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         <div className="form">
           <TextField label="Email" type="email" autoComplete="username" autoFocus value={email} onChange={setEmail} />
           <PasswordField label="Password" autoComplete="current-password" value={password} onChange={setPassword}

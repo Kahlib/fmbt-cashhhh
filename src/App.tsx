@@ -19,6 +19,14 @@ import { Settings } from './screens/Settings.tsx'
 import { SignIn } from './screens/SignIn.tsx'
 import { StartFromBackup } from './screens/StartFromBackup.tsx'
 
+// Shown at sign-in after Supabase ends the session by itself.
+const SIGNED_OUT_NOTICE = 'You were signed out, perhaps by a password change or sign-out in another tab. Sign in again to carry on.'
+
+// Every sign-out ends with a reload, the only sure way to clear the data key
+// and everything else from memory (fmbt-security, section 3). When Supabase
+// ended the session, the reload adds ?signed-out so sign-in can say why.
+const signedOutElsewhere = new URLSearchParams(location.search).has('signed-out')
+
 type Screen =
   | { name: 'sign-in'; notice?: string }
   | { name: 'recover' }
@@ -31,7 +39,7 @@ type Screen =
   | { name: 'settings'; toast?: string }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>({ name: 'sign-in' })
+  const [screen, setScreen] = useState<Screen>(signedOutElsewhere ? { name: 'sign-in', notice: SIGNED_OUT_NOTICE } : { name: 'sign-in' })
   const [unlocked, setUnlockedState] = useState<Unlocked | null>(null)
   // The same value, readable straight away by the session listener below.
   const unlockedNow = useRef<Unlocked | null>(null)
@@ -41,20 +49,24 @@ export default function App() {
     setUnlockedState(value)
   }
 
+  // Take ?signed-out back off the address once the note is showing.
+  useEffect(() => {
+    if (signedOutElsewhere) history.replaceState(null, '', '/')
+  }, [])
+
   // If Supabase ends the session on its own while the tab is unlocked,
-  // forget the data key and go back to sign-in.
+  // forget the data key and reload.
   useEffect(() => onSessionEnded(() => {
     if (unlockedNow.current === null) return
     unlockedNow.current = null
-    setUnlockedState(null)
-    setScreen({ name: 'sign-in', notice: 'You were signed out, perhaps by a password change or sign-out in another tab. Sign in again to carry on.' })
+    location.replace('/?signed-out')
   }), [])
 
   function signOut() {
-    // Forget the key first, so the session listener knows this was asked for.
+    // Forget the key first, so the session listener knows this was asked
+    // for. The reload waits for Supabase, so every session really ends.
     setUnlocked(null)
-    setScreen({ name: 'sign-in' })
-    void api.signOut()
+    void api.signOut().finally(() => location.replace('/'))
   }
 
   // Where a freshly unlocked tab goes.

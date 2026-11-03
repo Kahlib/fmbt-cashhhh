@@ -50,7 +50,7 @@ export function KeyPassword({ api, unlocked, pending, onSaved, onCancel }: {
     <OutPage corner={`Signed in as ${unlocked.email}`}
       footer="A new recovery key needs a password sign-in from the last 5 minutes, which is why it asks again.">
       <ScreenTitle sub="The app signs in again with it, so your new recovery key can replace the old one.">Confirm with your password</ScreenTitle>
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         {/* Password managers look for the account's name next to its password. */}
         <input type="email" autoComplete="username" value={unlocked.email} readOnly hidden />
         <div className="form">

@@ -64,7 +64,7 @@ export function Recover({ api, onRecovered, onBack }: {
     <OutPage corner="Invite only" wide footer="After 5 wrong tries, recovery for this email pauses for 24 hours.">
       <ScreenTitle sub="Set a new password with the recovery key you saved at setup. Your bets stay exactly as they are.">Use your recovery key</ScreenTitle>
 
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         <div className="form">
           <TextField label="Email" type="email" autoComplete="username" value={email} onChange={setEmail} />
           <KeyField label="Recovery key" value={keyText} onChange={setKeyText}

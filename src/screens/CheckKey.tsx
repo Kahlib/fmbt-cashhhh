@@ -47,7 +47,7 @@ export function CheckKey({ email, pending, onMatched, onShowAgain }: {
         {first ? 'Check your recovery key' : 'Check your new recovery key'}
       </ScreenTitle>
 
-      <form className="stack" onSubmit={submit} noValidate>
+      <form className="stack" method="post" onSubmit={submit} noValidate>
         <div className="form">
           <div className="groups-in">
             {numbers.map((n, i) => (
