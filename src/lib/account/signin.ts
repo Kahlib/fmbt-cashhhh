@@ -15,7 +15,9 @@ import { newestFirst, openFirst, type Unlocked } from './wraps.ts'
 // Where the app goes once the tab is unlocked.
 export type NextStep =
   | { step: 'app' }
-  | { step: 'save-recovery-key'; newKey: NewRecoveryKey; prepared: PreparedRecoveryWrap } // setup steps 2 and 3
+  // Setup steps 2 and 3. `first` is true when the account has never had a
+  // recovery wrap, so the screens show first-time setup.
+  | { step: 'save-recovery-key'; newKey: NewRecoveryKey; prepared: PreparedRecoveryWrap; first: boolean }
   | { step: 'first-backup' }                                                              // setup step 4
 
 export type SignInResult =
@@ -55,7 +57,7 @@ async function unlock(api: AccountApi, email: string, wrapKey: CryptoKey): Promi
       return { kind: 'keys-missing' }
     }
     const done = await finishStepOne(api, email, wrapKey, wraps)
-    return { kind: 'unlocked', unlocked: done.unlocked, next: { step: 'save-recovery-key', newKey: done.newKey, prepared: done.prepared } }
+    return { kind: 'unlocked', unlocked: done.unlocked, next: { step: 'save-recovery-key', newKey: done.newKey, prepared: done.prepared, first: true } }
   }
 
   const opened = await openFirst(passwordWraps, wrapKey, { extractable: false })
@@ -77,7 +79,7 @@ async function unlock(api: AccountApi, email: string, wrapKey: CryptoKey): Promi
     const extractable = await unwrapDataKey(opened.row, wrapKey, { extractable: true })
     const newKey = await makeNewRecoveryKey()
     const prepared = await prepareRecoveryWrap(extractable, newKey, wraps)
-    return { kind: 'unlocked', unlocked, next: { step: 'save-recovery-key', newKey, prepared } }
+    return { kind: 'unlocked', unlocked, next: { step: 'save-recovery-key', newKey, prepared, first: newestRecovery === undefined } }
   }
 
   if (settings.record.lastBackupAt === null) return { kind: 'unlocked', unlocked, next: { step: 'first-backup' } }

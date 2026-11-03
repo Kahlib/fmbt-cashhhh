@@ -22,3 +22,4 @@ npm run dev     # needs .env.development.local with the dev project's two values
 - `scripts/check-env.ts` makes sure the only values a build can see are production's address and publishable key, which are public.
 - `supabase/functions/recover` is the Forgot password server function. It checks a recovery proof and sets the new password, and gives the same answer to every failure.
 - `src/lib/account` holds sign-in, setup, password changes, recovery and backups. Its tests run each flow against a fake server and break every server call it makes, checking that a key change cut off at any point still leaves a way in.
+- `src/screens` holds the pages. The unlocked data key stays in the tab's memory, so closing or refreshing the tab signs you out and leaves nothing on the computer.

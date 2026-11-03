@@ -16,11 +16,19 @@ export default defineConfig(({ command, mode, isPreview }) => {
 
   return {
     plugins: [react()],
+    // The recover function only answers pages from localhost:5173, so dev
+    // stops with an error rather than quietly moving to another port.
+    server: { port: 5173, strictPort: true },
     build: {
       // Remove every console call from the live build, including ones inside
       // packages, so nothing can log bets, keys or tokens there
       // (fmbt-security, section 8).
       rolldownOptions: { output: { minify: { compress: { dropConsole: true } } } },
+      // Vite warns when one file passes 500 kB. The app's one file is mostly
+      // React and Supabase's library, and both are needed as soon as the
+      // page opens, so splitting them out wouldn't let anything load later.
+      // The higher limit still warns if the file grows by much more.
+      chunkSizeWarningLimit: 600,
     },
   }
 })

@@ -8,7 +8,8 @@ export type Unlocked = { email: string; dataKey: CryptoKey }
 
 // The wraps of one kind, newest first. Sign-in and recovery try them in this
 // order, so a key change that stopped halfway never locks anyone out.
-export function newestFirst(wraps: KeyWrapRow[], kind: KeyWrapKind): KeyWrapRow[] {
+// Generic, so rows from the server keep their created_at.
+export function newestFirst<T extends KeyWrapRow>(wraps: T[], kind: KeyWrapKind): T[] {
   return wraps.filter(wrap => wrap.kind === kind).sort((a, b) => b.version_no - a.version_no)
 }
 

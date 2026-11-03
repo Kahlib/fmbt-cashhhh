@@ -12,7 +12,7 @@ import { replaceRecoveryKey, recoverAccount } from '../src/lib/account/recovery.
 import { makeNewRecoveryKey, saveRecoveryKey, type NewRecoveryKey } from '../src/lib/account/new-recovery-key.ts'
 import { createAccount } from '../src/lib/account/setup.ts'
 import { signIn, signInWithKeys } from '../src/lib/account/signin.ts'
-import { recordBackup } from '../src/lib/account/backup.ts'
+import { exportBackup, readBackup, recordBackup } from '../src/lib/account/backup.ts'
 import { randomBytes, toBase64 } from '../src/lib/crypto/bytes.ts'
 import { derivePasswordKeys } from '../src/lib/crypto/kdf.ts'
 import { readRecoveryKey, type RecoveryKeys } from '../src/lib/crypto/recovery-key.ts'
@@ -343,9 +343,11 @@ test('Two tabs saving settings at the same moment both get saved', async () => {
   const first = await signedIn(server, keys.old)
   const second = await signedIn(server, keys.old)
   const before = await loadSettings(first.tab, first.unlocked.dataKey)
+  const backup = readBackup((await exportBackup(first.tab)).text)
+  if (!backup.ok) throw new Error(backup.problem)
   await Promise.all([
-    recordBackup(first.tab, first.unlocked.dataKey, new Date('2026-11-03T09:00:00.000Z')),
-    recordBackup(second.tab, second.unlocked.dataKey, new Date('2026-11-03T09:00:01.000Z')),
+    recordBackup(first.tab, first.unlocked.dataKey, backup.backup, new Date('2026-11-03T09:00:00.000Z')),
+    recordBackup(second.tab, second.unlocked.dataKey, backup.backup, new Date('2026-11-03T09:00:01.000Z')),
   ])
   const after = await loadSettings(first.tab, first.unlocked.dataKey)
   assert.equal(after.newestVersion, before.newestVersion + 2)

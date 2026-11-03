@@ -1,9 +1,11 @@
-// The one Supabase client the whole app shares. Nothing uses it yet: sign-in
-// arrives in step 7.5.
+// The one Supabase client the whole app shares. account/connect.ts hands it
+// to the screens.
 //
 // fmbt-security, section 3: the session lives in this tab's memory only.
-// Nothing goes in localStorage, sessionStorage, IndexedDB or cookies, so
+// It never goes in localStorage, sessionStorage, IndexedDB or cookies, so
 // closing or refreshing the tab signs you out and leaves nothing on disk.
+// (As it loads, Supabase's library checks localStorage works by saving a
+// test value and deleting it straight away. Nothing is left there.)
 import { createClient } from '@supabase/supabase-js'
 import { readConfig } from './config.ts'
 

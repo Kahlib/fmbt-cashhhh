@@ -11,10 +11,10 @@ import { checkPassword, type PasswordProblem } from './password-rules.ts'
 import { isRow, pickColumns } from './rows.ts'
 import type { StepOneDone } from './setup.ts'
 import { derivePasswordKeys, tidyEmail, type PasswordKeys } from '../crypto/kdf.ts'
-import type { KeyWrapRow } from '../crypto/keys.ts'
+import type { KeyWrapKind, KeyWrapRow } from '../crypto/keys.ts'
 import { decryptRecord } from '../crypto/records.ts'
 import { deriveRecoveryKeys, readRecoveryKey } from '../crypto/recovery-key.ts'
-import { EMPTY_SETTINGS, isIsoTime, updateSettings } from '../records/settings.ts'
+import { EMPTY_SETTINGS, isIsoTime, updateSettings, type SettingsRecord } from '../records/settings.ts'
 import { makeNewRecoveryKey, prepareRecoveryWrap } from './new-recovery-key.ts'
 import { newestFirst, openFirst, saveAndProveWrap } from './wraps.ts'
 
@@ -156,10 +156,32 @@ export async function checkBackup(api: AccountApi, dataKey: CryptoKey, backup: B
   return check
 }
 
-// Notes in your settings that a backup checked out, which resets the
-// 30-day reminder.
-export async function recordBackup(api: AccountApi, dataKey: CryptoKey, now = new Date()): Promise<void> {
-  await updateSettings(api, dataKey, record => ({ ...record, lastBackupAt: now.toISOString() }))
+// Notes in your settings that this backup checked out: when, which resets
+// the 30-day reminder, and which key wraps it holds.
+export async function recordBackup(api: AccountApi, dataKey: CryptoKey, backup: Backup, now = new Date()): Promise<void> {
+  const backupWrapIds = backup.keyWraps.map(wrap => wrap.id)
+  await updateSettings(api, dataKey, record => ({ ...record, lastBackupAt: now.toISOString(), backupWrapIds }))
+}
+
+export type BackupStatus =
+  | { kind: 'fine' }
+  | { kind: 'keys-changed'; password: boolean; recovery: boolean } // since the last checked backup
+  | { kind: 'overdue'; days: number | null }                       // null: no backup has checked out yet
+
+// Whether Settings should ask for a fresh backup. A changed password or
+// recovery key matters most, because older backups still open with the old
+// ones. Then a backup more than 30 days old.
+export function backupStatus(settings: SettingsRecord, wraps: KeyWrapRow[], now = new Date()): BackupStatus {
+  if (settings.lastBackupAt === null) return { kind: 'overdue', days: null }
+  const changed = (kind: KeyWrapKind) => {
+    const newest = newestFirst(wraps, kind)[0]
+    return newest !== undefined && !settings.backupWrapIds.includes(newest.id)
+  }
+  const password = changed('password')
+  const recovery = changed('recovery')
+  if (password || recovery) return { kind: 'keys-changed', password, recovery }
+  const days = Math.floor((now.getTime() - Date.parse(settings.lastBackupAt)) / 86_400_000)
+  return days > 30 ? { kind: 'overdue', days } : { kind: 'fine' }
 }
 
 // ---------- Restoring into this account ----------

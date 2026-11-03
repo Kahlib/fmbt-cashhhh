@@ -54,7 +54,7 @@ export async function takeBackup(tab: FakeTab, dataKey: CryptoKey): Promise<stri
   const read = readBackup(exported.text)
   if (!read.ok) throw new Error(`The backup didn't read: ${read.problem}`)
   assert.ok((await checkBackup(tab, dataKey, read.backup)).ok)
-  await recordBackup(tab, dataKey)
+  await recordBackup(tab, dataKey, read.backup)
   return exported.text
 }
 

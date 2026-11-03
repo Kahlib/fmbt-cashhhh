@@ -1,6 +1,9 @@
 // The settings record: details about your account that only you should
-// see, encrypted like everything else. Step 7 needs two:
-//   - when you last took a backup, for the 30-day reminder
+// see, encrypted like everything else. Step 7 needs three:
+//   - when you last took a backup that checked out, for the 30-day reminder
+//   - which key wraps that backup holds, so the app can tell when your
+//     password or recovery key has changed since, without comparing the
+//     browser's clock with the server's
 //   - which recovery wrap belongs to the recovery key you saved. Sign-in
 //     compares it with the newest recovery wrap, so it can tell a key that
 //     finished saving from one whose save stopped halfway.
@@ -14,10 +17,11 @@ import { decryptRecord, encryptRecord, RECORD_VERSION } from '../crypto/records.
 export type SettingsRecord = {
   schema: 1
   lastBackupAt: string | null   // when a backup last checked out
+  backupWrapIds: string[]       // the key wraps in that backup
   recoveryWrapId: string | null // the recovery wrap of the key you saved, once its proof is saved too
 }
 
-export const EMPTY_SETTINGS: SettingsRecord = { schema: 1, lastBackupAt: null, recoveryWrapId: null }
+export const EMPTY_SETTINGS: SettingsRecord = { schema: 1, lastBackupAt: null, backupWrapIds: [], recoveryWrapId: null }
 
 // Checks that a decrypted value really is a settings record before anything
 // uses it (fmbt-security, section 2: validate after decrypting).
@@ -25,9 +29,11 @@ export function isSettingsRecord(value: unknown): value is SettingsRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const record = value as Record<string, unknown>
   const names = Object.keys(record)
-  if (names.length !== 3 || !names.every(name => Object.hasOwn(EMPTY_SETTINGS, name))) return false
+  if (names.length !== 4 || !names.every(name => Object.hasOwn(EMPTY_SETTINGS, name))) return false
   if (record.schema !== 1) return false
   if (record.lastBackupAt !== null && !isIsoTime(record.lastBackupAt)) return false
+  const ids = record.backupWrapIds
+  if (!Array.isArray(ids) || ids.length > 200 || !ids.every(id => isUuid(id))) return false
   return record.recoveryWrapId === null || isUuid(record.recoveryWrapId)
 }
 
