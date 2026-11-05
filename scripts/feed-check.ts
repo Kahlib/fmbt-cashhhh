@@ -183,7 +183,8 @@ async function check(label: string, path: string, key: string): Promise<boolean>
   console.log(`\n== ${label}`)
   let response: Response
   try {
-    response = await fetch(API + path, { headers: { 'X-Auth-Token': key }, signal: AbortSignal.timeout(30_000) })
+    // Redirects are refused, so the key can't be carried to any other address.
+    response = await fetch(API + path, { headers: { 'X-Auth-Token': key }, redirect: 'error', signal: AbortSignal.timeout(30_000) })
   } catch (error) {
     console.log(`Couldn't reach football-data.org: ${error instanceof Error ? error.message : 'unknown error'}`)
     return false
