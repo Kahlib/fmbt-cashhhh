@@ -20,6 +20,7 @@ npm run dev     # needs .env.development.local with the dev project's two values
 - `supabase/migrations` holds the database. `npm run test:schema` runs every migration in order, then 79 tests that try to break its access rules.
 - `.npmrc` refuses package versions less than 3 days old and blocks install scripts.
 - `scripts/check-env.ts` makes sure the only values a build can see are production's address and publishable key, which are public.
+- `scripts/feed-check.ts` shows what football-data.org's feed really sends, so the fixture sync's checks match it. It needs a football-data key, which it never prints.
 - `supabase/functions/recover` is the Forgot password server function. It checks a recovery proof and sets the new password, and gives the same answer to every failure.
 - `src/lib/account` holds sign-in, setup, password changes, recovery and backups. Its tests run each flow against a fake server and break every server call it makes, checking that a key change cut off at any point still leaves a way in.
 - `src/screens` holds the pages. The unlocked data key stays in the tab's memory, so closing or refreshing the tab signs you out and leaves nothing on the computer.
