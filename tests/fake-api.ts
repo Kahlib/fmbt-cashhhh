@@ -8,11 +8,17 @@
 //   - rows in the database's shapes (checked by rows.ts), IDs unique in each
 //     table, version numbers unique in each account
 //   - delete_old_key_wraps(kind) clears only older wraps of that kind
+//   - latest_week_versions gives each week's newest version
+//   - save_week_with_audit saves its two rows together, or neither
+//   - the football tables, which only signed-in users can read
 //
 // It can also break any one call the way a network or a closed tab would,
 // so the tests can show that a flow stopping anywhere still leaves a way in.
 import { createHash, randomUUID } from 'node:crypto'
-import { ServerError, type AccountApi, type AuthResult, type RecordTable, type Rows, type SaveResult, type Stored, type Table } from '../src/lib/account/api.ts'
+import {
+  ServerError, type AccountApi, type AuditRow, type AuthResult, type FixtureRow, type RecordTable, type Rows, type SaveResult,
+  type Stored, type SyncStatusRow, type Table, type TeamRow, type WeekKey, type WeekRow,
+} from '../src/lib/account/api.ts'
 import { isRow } from '../src/lib/account/rows.ts'
 import { tidyEmail } from '../src/lib/crypto/kdf.ts'
 import type { KeyWrapKind } from '../src/lib/crypto/keys.ts'
@@ -41,6 +47,7 @@ type State = {
   invites: string[]
   accounts: Account[]
   rows: { [T in Table]: ServerRow<T>[] }
+  football: { teams: TeamRow[]; fixtures: FixtureRow[]; syncStatus: SyncStatusRow }
 }
 
 const DAY = 24 * 60 * 60 * 1000
@@ -58,6 +65,7 @@ export class FakeServer {
       invites: [],
       accounts: [],
       rows: { key_wraps: [], week_versions: [], settings_versions: [], audit_entries: [] },
+      football: { teams: [], fixtures: [], syncStatus: { last_attempt_at: null, last_success_at: null } },
     }
   }
 
@@ -286,15 +294,96 @@ export class FakeTab implements AccountApi {
     })
   }
 
+  latestWeekVersions(): Promise<Stored<WeekRow>[]> {
+    return this.run(() => {
+      const newest = new Map<string, Stored<WeekRow>>()
+      for (const row of this.server.rowsOf(this.me().id, 'week_versions')) {
+        const week = `${row.season} ${row.competition} ${row.period}`
+        const seen = newest.get(week)
+        if (seen === undefined || row.version_no > seen.version_no) newest.set(week, row)
+      }
+      return [...newest.values()]
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  weekVersions(week: WeekKey): Promise<Stored<WeekRow>[]> {
+    return this.run(() => this.server.rowsOf(this.me().id, 'week_versions').filter(row =>
+      row.season === week.season && row.competition === week.competition && row.period === week.period), () => {
+      throw new ServerError()
+    })
+  }
+
+  lastAuditEntry(): Promise<Stored<AuditRow> | null> {
+    return this.run(() => {
+      const rows = this.server.rowsOf(this.me().id, 'audit_entries')
+      return rows.reduce<Stored<AuditRow> | null>((last, row) => (last === null || row.seq > last.seq ? row : last), null)
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  // Both inserts in one transaction: if either is refused, neither is saved.
+  saveWeekWithAudit(week: WeekRow, audit: AuditRow): Promise<SaveResult> {
+    return this.run(() => {
+      this.me()
+      if (!isRow('week_versions', week) || !isRow('audit_entries', audit)) throw new ServerError()
+      if (this.isTaken('week_versions', week) || this.isTaken('audit_entries', audit)) return 'taken'
+      this.add('week_versions', week)
+      this.add('audit_entries', audit)
+      return 'saved'
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  teams(): Promise<TeamRow[]> {
+    return this.run(() => {
+      this.me()
+      return structuredClone(this.server.state.football.teams)
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  fixtures(season: number): Promise<FixtureRow[]> {
+    return this.run(() => {
+      this.me()
+      return structuredClone(this.server.state.football.fixtures.filter(row => row.season === season))
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  syncStatus(): Promise<SyncStatusRow> {
+    return this.run(() => {
+      this.me()
+      return structuredClone(this.server.state.football.syncStatus)
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
   // An insert, with the database's checks.
   private insert<T extends Table>(table: T, row: Rows[T]): SaveResult {
     const me = this.me().id
     if (!isRow(table, row)) throw new ServerError() // a check or domain refused it
-    const rows = this.server.state.rows[table] as ServerRow<T>[]
-    if (rows.some(other => other.id === row.id)) return 'taken'
-    if (rows.some(other => other.user_id === me && versionKey(table, other) === versionKey(table, row))) return 'taken'
-    if (table === 'key_wraps' && rows.filter(other => other.user_id === me).length >= 200) throw new ServerError()
-    rows.push({ ...row, user_id: me, created_at: this.server.now() } as unknown as ServerRow<T>)
+    if (this.isTaken(table, row)) return 'taken'
+    if (table === 'key_wraps' && this.server.state.rows.key_wraps.filter(other => other.user_id === me).length >= 200) throw new ServerError()
+    this.add(table, row)
     return 'saved'
+  }
+
+  // True if a unique rule refuses the row: its ID, or its version number in this account.
+  private isTaken<T extends Table>(table: T, row: Rows[T]): boolean {
+    const me = this.me().id
+    const rows = this.server.state.rows[table] as ServerRow<T>[]
+    return rows.some(other => other.id === row.id || (other.user_id === me && versionKey(table, other) === versionKey(table, row)))
+  }
+
+  private add<T extends Table>(table: T, row: Rows[T]): void {
+    const rows = this.server.state.rows[table] as ServerRow<T>[]
+    rows.push({ ...row, user_id: this.me().id, created_at: this.server.now() } as unknown as ServerRow<T>)
   }
 }

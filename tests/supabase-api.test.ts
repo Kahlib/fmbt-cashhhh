@@ -183,3 +183,108 @@ test('Signing out ends every session, and never throws, even offline', async () 
   await assert.rejects(offline.api.keyWraps(), ServerError)
   assert.ok(!(offline.requests.at(-1)?.headers.get('authorization') ?? '').startsWith('Bearer eyJ'))
 })
+
+// ---------------------------------------------------------------------------
+// Weeks, the audit log and the football tables (step 9)
+// ---------------------------------------------------------------------------
+
+const id = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
+const CT = 'B'.repeat(1388) // the smallest ciphertext the database takes
+const weekRow = (n: number, change: Record<string, unknown> = {}) => ({
+  id: id(n), season: 2026, competition: 'PL', period: 'MW11', version_no: n + 1, v: 1, iv: 'A'.repeat(16), ct: CT,
+  created_at: '2026-11-02T12:00:00.123456+00:00', ...change,
+})
+const auditRow = (seq: number) => ({
+  id: id(seq), seq, prev_hash: seq === 1 ? null : 'c'.repeat(64), v: 1, iv: 'A'.repeat(16), ct: CT, created_at: '2026-11-02T12:00:00+00:00',
+})
+const WEEK_COLUMNS = 'id,season,competition,period,version_no,v,iv,ct,created_at'
+
+test("each week's newest version comes from the view, in pages", async () => {
+  const all = Array.from({ length: 1001 }, (_, n) => weekRow(n, { period: `MW${(n % 38) + 1}`, season: 2026 + Math.floor(n / 38) }))
+  const { api, requests } = harness(request => {
+    const after = request.query.get('id')?.replace('gt.', '') ?? ''
+    return { status: 200, body: all.filter(row => row.id > after).slice(0, 1000) }
+  })
+  assert.equal((await api.latestWeekVersions()).length, 1001)
+  assert.equal(requests[0]?.path, '/rest/v1/latest_week_versions')
+  assert.equal(requests[0]?.query.get('select'), WEEK_COLUMNS)
+  assert.equal(requests[0]?.query.get('order'), 'id.asc')
+  assert.equal(requests[1]?.query.get('id'), `gt.${all[999]?.id}`)
+})
+
+test("one week's versions: asked for by week, and a row from another week is refused", async () => {
+  const { api, requests } = harness(request => ({ status: 200, body: request.query.has('id') ? [] : [weekRow(1), weekRow(2)] }))
+  assert.equal((await api.weekVersions({ season: 2026, competition: 'PL', period: 'MW11' })).length, 2)
+  assert.equal(requests[0]?.path, '/rest/v1/week_versions')
+  assert.deepEqual(['season', 'competition', 'period'].map(name => requests[0]?.query.get(name)), ['eq.2026', 'eq.PL', 'eq.MW11'])
+  for (const other of [{ period: 'MW12' }, { season: 2027 }, { competition: 'UCL', period: 'MD4' }]) {
+    const stray = harness(request => ({ status: 200, body: request.query.has('id') ? [] : [weekRow(1), weekRow(2, other)] })).api
+    await assert.rejects(stray.weekVersions({ season: 2026, competition: 'PL', period: 'MW11' }), ServerError, JSON.stringify(other))
+  }
+})
+
+test('the last audit entry: the highest number, or null when there is none', async () => {
+  const { api, requests } = harness(() => ({ status: 200, body: [auditRow(7)] }))
+  assert.equal((await api.lastAuditEntry())?.seq, 7)
+  assert.equal(requests[0]?.path, '/rest/v1/audit_entries')
+  assert.equal(requests[0]?.query.get('order'), 'seq.desc')
+  assert.equal(requests[0]?.query.get('limit'), '1')
+  assert.equal(requests[0]?.query.get('select'), 'id,seq,prev_hash,v,iv,ct,created_at')
+  assert.equal(await harness(() => ({ status: 200, body: [] })).api.lastAuditEntry(), null)
+  await assert.rejects(harness(() => ({ status: 200, body: [{ ...auditRow(2), prev_hash: null }] })).api.lastAuditEntry(), ServerError)
+  await assert.rejects(harness(() => ({ status: 200, body: [auditRow(2), auditRow(1)] })).api.lastAuditEntry(), ServerError)
+  await assert.rejects(harness(() => ({ status: 500, body: {} })).api.lastAuditEntry(), ServerError)
+})
+
+test('saving a week with its audit entry sends every argument by name', async () => {
+  const { created_at: _week, ...week } = weekRow(2)
+  const { created_at: _audit, ...audit } = auditRow(3)
+  const save = (reply: Reply) => {
+    const { api, requests } = harness(() => reply)
+    return { result: api.saveWeekWithAudit(week, audit), requests }
+  }
+  const ok = save({ status: 204 })
+  assert.equal(await ok.result, 'saved')
+  assert.equal(ok.requests[0]?.path, '/rest/v1/rpc/save_week_with_audit')
+  assert.deepEqual(JSON.parse(ok.requests[0]?.body ?? '{}'), {
+    week_id: week.id, week_season: 2026, week_competition: 'PL', week_period: 'MW11', week_version_no: 3, week_v: 1, week_iv: week.iv, week_ct: CT,
+    audit_id: audit.id, audit_seq: 3, audit_prev_hash: 'c'.repeat(64), audit_v: 1, audit_iv: audit.iv, audit_ct: CT,
+  })
+  assert.equal(await save({ status: 409, body: { code: '23505', message: 'duplicate key value violates unique constraint' } }).result, 'taken')
+  await assert.rejects(save({ status: 400, body: { code: '23514', message: 'violates check constraint' } }).result, ServerError)
+  await assert.rejects(save('network-error').result, ServerError)
+})
+
+test('the football tables: their columns and filters, and every row checked', async () => {
+  const team = { id: 9001, name: 'Manchester City FC', short_name: 'Man City', code: 'MCI' }
+  const fixture = {
+    id: 900_001, competition: 'PL', season: 2026, period: 'MW11', tie_leg: null, kickoff: '2026-11-07T17:30:00+00:00',
+    home_team_id: 9001, away_team_id: 9002, status: 'scheduled', minute: null, home_90: null, away_90: null,
+    home_ht: null, away_ht: null, home_et: null, away_et: null, home_pens: null, away_pens: null,
+  }
+  const status = { last_attempt_at: '2026-11-07T17:31:02.123456+00:00', last_success_at: null }
+  const { api, requests } = harness(request => {
+    if (request.query.has('id')) return { status: 200, body: [] }
+    if (request.path.endsWith('/teams')) return { status: 200, body: [team] }
+    if (request.path.endsWith('/fixtures')) return { status: 200, body: [fixture] }
+    return { status: 200, body: [status] }
+  })
+  assert.deepEqual(await api.teams(), [team])
+  assert.equal(requests[0]?.query.get('select'), 'id,name,short_name,code')
+  assert.deepEqual(await api.fixtures(2026), [fixture])
+  const fixtureRequest = requests.find(request => request.path === '/rest/v1/fixtures')
+  assert.equal(fixtureRequest?.query.get('season'), 'eq.2026')
+  assert.equal(fixtureRequest?.query.get('select'),
+    'id,competition,season,period,tie_leg,kickoff,home_team_id,away_team_id,status,minute,home_90,away_90,home_ht,away_ht,home_et,away_et,home_pens,away_pens')
+  assert.deepEqual(await api.syncStatus(), status)
+  assert.equal(requests.at(-1)?.path, '/rest/v1/sync_status')
+  assert.equal(requests.at(-1)?.query.get('select'), 'last_attempt_at,last_success_at')
+
+  const answering = (body: unknown[]) => harness(request => ({ status: 200, body: request.query.has('id') ? [] : body })).api
+  await assert.rejects(answering([{ ...team, code: 'mci' }]).teams(), ServerError)
+  await assert.rejects(answering([{ ...fixture, status: 'FINISHED' }]).fixtures(2026), ServerError)
+  await assert.rejects(answering([{ ...fixture, kickoff: '2026-02-30T17:30:00+00:00' }]).fixtures(2026), ServerError)
+  for (const body of [[], [status, status], [{ ...status, last_success_at: 'never' }]]) {
+    await assert.rejects(answering(body).syncStatus(), ServerError, JSON.stringify(body))
+  }
+})

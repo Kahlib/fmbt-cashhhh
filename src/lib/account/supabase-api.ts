@@ -6,7 +6,7 @@
 // what the server said. Every row that comes back is checked before use.
 import type { AuthError, SupabaseClient } from '@supabase/supabase-js'
 import { ServerError, type AccountApi, type AuthResult, type Rows, type SaveResult, type Stored, type Table } from './api.ts'
-import { columnNames, isStoredRow } from './rows.ts'
+import { columnNames, FOOTBALL_COLUMNS, isFixtureRow, isStoredRow, isSyncStatusRow, isTeamRow } from './rows.ts'
 import type { SupabaseConfig } from '../config.ts'
 
 // Rows come back this many at a time.
@@ -106,6 +106,53 @@ export function supabaseApi(
     records: table => allRows(client, table),
     addRecord: (table, row) => insert(client, table, row),
 
+    latestWeekVersions: () => allRows(client, 'week_versions', { from: 'latest_week_versions' }),
+
+    async weekVersions(week) {
+      const equal = { season: week.season, competition: week.competition, period: week.period }
+      const rows = await allRows(client, 'week_versions', { equal })
+      // Every row must be from the week asked for.
+      if (!rows.every(row => row.season === week.season && row.competition === week.competition && row.period === week.period)) {
+        throw new ServerError()
+      }
+      return rows
+    },
+
+    async lastAuditEntry() {
+      const columns = [...columnNames('audit_entries'), 'created_at'].join(',')
+      const { data, error } = await client.from('audit_entries').select(columns).order('seq', { ascending: false }).limit(1)
+      const rows: unknown = data
+      if (error !== null || !Array.isArray(rows) || rows.length > 1) throw new ServerError()
+      const row: unknown = rows[0]
+      if (row === undefined) return null
+      if (!isStoredRow('audit_entries', row)) throw new ServerError()
+      return row
+    },
+
+    async saveWeekWithAudit(week, audit) {
+      // The function's arguments, by name.
+      const { error } = await client.rpc('save_week_with_audit', {
+        week_id: week.id, week_season: week.season, week_competition: week.competition, week_period: week.period,
+        week_version_no: week.version_no, week_v: week.v, week_iv: week.iv, week_ct: week.ct,
+        audit_id: audit.id, audit_seq: audit.seq, audit_prev_hash: audit.prev_hash, audit_v: audit.v, audit_iv: audit.iv, audit_ct: audit.ct,
+      })
+      if (error === null) return 'saved'
+      // Either insert hitting a unique rule undoes both, and means another tab saved first.
+      if (error.code === '23505') return 'taken'
+      throw new ServerError()
+    },
+
+    teams: () => pagedRows(client, 'teams', FOOTBALL_COLUMNS.teams, isTeamRow),
+    fixtures: season => pagedRows(client, 'fixtures', FOOTBALL_COLUMNS.fixtures, isFixtureRow, { season }),
+
+    async syncStatus() {
+      const { data, error } = await client.from('sync_status').select(FOOTBALL_COLUMNS.sync_status.join(',')).limit(2)
+      const rows: unknown = data
+      // There's only ever one row.
+      if (error !== null || !Array.isArray(rows) || rows.length !== 1 || !isSyncStatusRow(rows[0])) throw new ServerError()
+      return rows[0]
+    },
+
     async hasRecords() {
       for (const table of ['week_versions', 'settings_versions', 'audit_entries'] as const) {
         const { data, error } = await client.from(table).select('id').limit(1)
@@ -130,15 +177,27 @@ function authProblem(error: AuthError): AuthResult {
   return UNAVAILABLE
 }
 
-// Every row of one table, in pages ordered by ID. Each page starts after the
-// last ID of the one before, and the loop stops at an empty page, so no
-// row-limit setting on the server can cut the list short.
-async function allRows<T extends Table>(client: SupabaseClient, table: T): Promise<Stored<Rows[T]>[]> {
-  const rows: Stored<Rows[T]>[] = []
-  const columns = [...columnNames(table), 'created_at'].join(',')
+// Every row of one of your tables, or of a view of one, with only `equal`'s
+// values in those columns.
+function allRows<T extends Table>(
+  client: SupabaseClient, table: T, options: { from?: string; equal?: Record<string, string | number> } = {},
+): Promise<Stored<Rows[T]>[]> {
+  const check = (row: unknown): row is Stored<Rows[T]> => isStoredRow(table, row)
+  return pagedRows(client, options.from ?? table, [...columnNames(table), 'created_at'], check, options.equal)
+}
+
+// Every row of a table or view, checked, in pages ordered by ID. Each page
+// starts after the last ID of the one before, and the loop stops at an empty
+// page, so no row-limit setting on the server can cut the list short.
+async function pagedRows<R extends { id: string | number }>(
+  client: SupabaseClient, from: string, columns: string[], check: (row: unknown) => row is R,
+  equal: Record<string, string | number> = {},
+): Promise<R[]> {
+  const rows: R[] = []
   for (;;) {
     const last = rows.at(-1)
-    let query = client.from(table).select(columns).order('id').limit(PAGE_SIZE)
+    let query = client.from(from).select(columns.join(',')).order('id').limit(PAGE_SIZE)
+    for (const [column, value] of Object.entries(equal)) query = query.eq(column, value)
     if (last !== undefined) query = query.gt('id', last.id)
     const { data, error } = await query
     const page: unknown = data
@@ -147,7 +206,7 @@ async function allRows<T extends Table>(client: SupabaseClient, table: T): Promi
     for (const row of page) {
       // Each ID must come after the last, or the server isn't answering what
       // was asked, and the loop could repeat rows forever.
-      if (!isStoredRow(table, row) || (rows.length > 0 && row.id <= rows[rows.length - 1].id)) throw new ServerError()
+      if (!check(row) || (rows.length > 0 && row.id <= rows[rows.length - 1].id)) throw new ServerError()
       rows.push(row)
     }
   }

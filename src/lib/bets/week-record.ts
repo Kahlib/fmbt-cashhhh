@@ -75,17 +75,17 @@ type Fields = Record<string, unknown>
 
 // True if `value` is a plain object with exactly these fields, no more and
 // no fewer. Object.hasOwn, so an inherited one such as "toString" never counts.
-function hasExactly(value: unknown, names: readonly string[]): value is Fields {
+export function hasExactly(value: unknown, names: readonly string[]): value is Fields {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const own = Object.keys(value)
   return own.length === names.length && names.every(name => Object.hasOwn(value, name))
 }
 
-const isWhole = (value: unknown, low: number, high: number): value is number =>
+export const isWhole = (value: unknown, low: number, high: number): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= low && value <= high
 const isTeamCode = (value: unknown): value is string => typeof value === 'string' && /^[A-Z]{3}$/.test(value)
 const isPick = (value: unknown): value is Pick => value === 'H' || value === 'D' || value === 'A'
-const isScore = (value: unknown): value is [number, number] =>
+export const isScore = (value: unknown): value is [number, number] =>
   Array.isArray(value) && value.length === 2 && isWhole(value[0], 0, MAX_GOALS) && isWhole(value[1], 0, MAX_GOALS)
 
 // Control characters and broken surrogates have no place in a reason.

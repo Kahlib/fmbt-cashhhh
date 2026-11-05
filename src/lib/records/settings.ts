@@ -38,8 +38,12 @@ export function isSettingsRecord(value: unknown): value is SettingsRecord {
 }
 
 // A time like 2026-11-02T17:30:00.000Z, which is what toISOString() writes.
+// The round trip refuses times that don't exist, which Date would quietly
+// roll over: 30 February would become 2 March.
 export function isIsoTime(value: unknown): value is string {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value) && !Number.isNaN(Date.parse(value))
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value)) return false
+  const time = new Date(value)
+  return !Number.isNaN(time.getTime()) && time.toISOString().slice(0, 19) === value.slice(0, 19)
 }
 
 export type LoadedSettings = {
