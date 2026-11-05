@@ -16,8 +16,10 @@
 // It signs up two junk accounts the first time and saves their random
 // passwords in private-data/dev-test-accounts.json (never committed), so later
 // runs sign in instead. Since step 7.3 it also changes both passwords on every
-// run and saves the new ones straight away. It refuses to run against the
-// production project.
+// run and saves the new ones straight away. Since step 8.3 it also checks the
+// sync function turns away anyone without the scheduler secret, which it
+// never has itself, and that the football tables can be read but not written.
+// It refuses to run against the production project.
 
 import { createInterface } from 'node:readline/promises';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -256,6 +258,61 @@ if (!tokenA || !tokenB) {
   check('D25', 'With the current password, a change works and signs out the account\'s other sessions',
     changed.status === 200 && otherRefresh.status >= 400 && !!signedInNew.json?.access_token,
     `${say(changed)} / ${say(otherRefresh)} / ${say(signedInNew)}`);
+
+  // ---------- 6. The sync function and the football tables (step 8.3) ----------
+  // This script never has the scheduler secret, so every call to the sync
+  // function must get a bare 401: no body at all, which also shows its JWT
+  // check is off, since Supabase's own 401 says why.
+  const tokenNow = signedInNew.json?.access_token ?? tokenA;
+  const syncCall = async (headers = {}, method = 'POST') => {
+    const res = await fetch(url + '/functions/v1/sync-fixtures', {
+      method, headers: { 'Content-Type': 'application/json', ...headers }, ...(method === 'POST' ? { body: '{}' } : {}),
+    });
+    return { status: res.status, text: await res.text() };
+  };
+  const wrongSecret = randomBytes(48).toString('base64url').replace(/[^A-Za-z0-9]/g, '').slice(0, 48);
+  const turnedAway = [
+    await syncCall(),
+    await syncCall({ 'X-Sync-Secret': wrongSecret }),
+    await syncCall({ apikey: key, Authorization: `Bearer ${tokenNow}` }),
+    await syncCall({ 'X-Sync-Secret': wrongSecret }, 'GET'),
+  ];
+  check('D26', 'The sync function gives a bare 401 to no secret, a wrong secret, a signed-in user\'s token and a GET',
+    turnedAway.every(x => x.status === 401 && x.text === ''), turnedAway.map(x => `${x.status} ${x.text.slice(0, 80)}`).join(' / '));
+
+  const anonTeams = await call('GET', '/rest/v1/teams?select=id&limit=1');
+  const anonStatus = await call('GET', '/rest/v1/sync_status?select=*');
+  check('D27', 'Signed out: reading teams or the sync status is refused', refused(anonTeams) && refused(anonStatus),
+    `${say(anonTeams)} / ${say(anonStatus)}`);
+
+  const teams = await call('GET', '/rest/v1/teams?select=id,code&limit=1', { token: tokenNow });
+  const games = await call('GET', '/rest/v1/fixtures?select=id,status&limit=1', { token: tokenNow });
+  const status = await call('GET', '/rest/v1/sync_status?select=last_attempt_at,last_success_at', { token: tokenNow });
+  check('D28', 'A signed-in user can read teams, fixtures and the sync status, which the sync has filled',
+    teams.json?.length === 1 && games.json?.length === 1 && status.json?.length === 1 && !!status.json[0].last_success_at,
+    `${say(teams)} / ${say(games)} / ${say(status)}`);
+
+  const someGame = games.json?.[0]?.id ?? 0;
+  const writes = [
+    await call('POST', '/rest/v1/teams', { token: tokenNow, headers: { Prefer: 'return=minimal' }, body: { id: 999999, name: 'Junk FC', short_name: 'Junk', code: 'JNK' } }),
+    await call('PATCH', '/rest/v1/teams?id=gt.0', { token: tokenNow, body: { code: 'JNK' } }),
+    await call('PATCH', `/rest/v1/fixtures?id=eq.${someGame}`, { token: tokenNow, body: { home_90: 9, away_90: 0 } }),
+    await call('DELETE', `/rest/v1/fixtures?id=eq.${someGame}`, { token: tokenNow }),
+    await call('PATCH', '/rest/v1/sync_status?id=eq.true', { token: tokenNow, body: { last_success_at: null } }),
+  ];
+  check('D29', 'A signed-in user can\'t add or change teams, change or delete fixtures, or change the sync status',
+    writes.every(refused), writes.map(say).join(' / '));
+
+  // Turning on pg_cron and pg_net added the cron and net schemas. Like Vault
+  // and the private schema, they must be out of the API's reach, or anyone
+  // signed in could read the jobs or make the database send requests.
+  const reach = [
+    await call('GET', '/rest/v1/job?select=jobname', { token: tokenNow, headers: { 'Accept-Profile': 'cron' } }),
+    await call('POST', '/rest/v1/rpc/http_post', { token: tokenNow, headers: { 'Content-Profile': 'net' }, body: { url: 'https://example.invalid' } }),
+    await call('GET', '/rest/v1/decrypted_secrets?select=name', { token: tokenNow, headers: { 'Accept-Profile': 'vault' } }),
+  ];
+  check('D30', 'The scheduler\'s schemas and Vault can\'t be reached through the API', reach.every(x => x.status >= 400),
+    reach.map(say).join(' / '));
 }
 
 // ---------- Report ----------
