@@ -6,16 +6,17 @@
 // each week's newest version that opens and checks out, and says when a newer
 // one didn't (fmbt-security, section 2).
 //
-// A week locks once every leg in it is settled. After that, any change other
-// than adding parlays saves an audit entry along with the new version,
-// through save_week_with_audit, so neither exists without the other. Admin
-// mode, which asks you for the reason, is the pages' job. Nothing here
-// trusts it (fmbt-security, section 11).
+// A parlay locks once every leg in it is settled. After that, any change to
+// it, removing it, or deleting its week saves an audit entry along with the
+// new version, through save_week_with_audit, so neither exists without the
+// other. Adding parlays and changing open ones never need one. Admin mode,
+// which asks you for the reason, is the pages' job. Nothing here trusts it
+// (fmbt-security, section 11).
 import { ServerError, type AccountApi, type SaveResult, type Stored, type WeekRow } from '../account/api.ts'
 import { decryptRecord, encryptRecord, RECORD_VERSION } from '../crypto/records.ts'
 import { isIsoTime } from '../records/settings.ts'
-import { capChanges, describeChanges, isAuditRecord, onlyAddsParlays, sealAuditEntry, type AuditRecord } from './audit.ts'
-import { acceptCorrection, isLocked, settleWeek, type Correction, type FixtureScore, type Waiting } from './settle.ts'
+import { capChanges, describeChanges, isAuditRecord, lockedChanges, sealAuditEntry, type AuditRecord } from './audit.ts'
+import { acceptCorrection, settleWeek, type Correction, type FixtureScore, type Waiting } from './settle.ts'
 import { EMPTY_WEEK, isReason, isWeekRecord, TOMBSTONE, type Competition, type Week, type WeekRecord } from './week-record.ts'
 
 export type LoadedWeek = {
@@ -31,7 +32,7 @@ export type LoadedWeek = {
 export type WeekWarning = { week: Week; unreadable: number }
 
 // The reasons the app gives itself, for the two changes it makes to a locked
-// week without Admin mode.
+// parlay without Admin mode.
 export const NOTED_REASON = 'The 90-minute score was noted automatically.'
 export const CORRECTION_REASON = 'A score correction from the feed, accepted.'
 
@@ -85,10 +86,10 @@ export function visibleWeeks(weeks: readonly LoadedWeek[]): LoadedWeek[] {
   return weeks.filter(loaded => loaded.version > 0 && !loaded.record.deleted)
 }
 
-// True when a change needs an audit entry, so the pages know to ask why:
-// it changes a locked week, other than by adding parlays.
+// True when a change needs an audit entry, so the pages know to ask why: it
+// changes or removes a locked parlay, or deletes a week that holds one.
 export function needsAudit(before: WeekRecord, after: WeekRecord): boolean {
-  return isLocked(before) && describeChanges(before, after).length > 0 && !onlyAddsParlays(before, after)
+  return lockedChanges(before, after).length > 0
 }
 
 export type SaveWeekResult =
@@ -107,11 +108,14 @@ export async function saveWeek(
   if (changes.length === 0) return { result: 'unchanged', week: current }
   const version = current.newestVersion + 1
   let audit: AuditRecord | null = null
-  if (needsAudit(current.record, next)) {
-    if (!isReason(reason)) throw new RangeError('Changing a locked week needs a reason of 1 to 200 characters.')
+  // The entry lists the changes to locked parlays only. The rest of the save
+  // is in the new version anyway.
+  const locked = lockedChanges(current.record, next)
+  if (locked.length > 0) {
+    if (!isReason(reason)) throw new RangeError('Changing a locked parlay needs a reason of 1 to 200 characters.')
     audit = {
       schema: 1, at: now, week: current.week, fromVersion: current.version, toVersion: version,
-      changes: capChanges(changes), reason: reason.trim(),
+      changes: capChanges(locked), reason: reason.trim(),
     }
     if (!isAuditRecord(audit)) throw new RangeError("That change can't go in the audit log.")
   }
@@ -137,7 +141,7 @@ export function deleteWeek(api: AccountApi, dataKey: CryptoKey, current: LoadedW
 }
 
 // Accepts a score correction and saves it. You've just been asked, so on a
-// locked week the app gives the audit entry's reason itself (step 9 plan,
+// locked parlay the app gives the audit entry's reason itself (step 9 plan,
 // decision 5).
 export function saveCorrection(
   api: AccountApi, dataKey: CryptoKey, current: LoadedWeek, legId: string, fixtures: ReadonlyMap<number, FixtureScore>, now: string,
@@ -166,8 +170,8 @@ async function settleOne(
   for (let tries = 0; tries < 3; tries++) {
     const result = settleWeek(current.record, fixtures, now)
     // A week with nothing to settle comes back unchanged, with no server
-    // call. On a locked week, settling can only note scores, and that's the
-    // reason its audit entry gives.
+    // call. A locked parlay has nothing left to settle, so settling can only
+    // note its scores, and that's the reason its audit entry gives.
     const saved = await saveWeek(api, dataKey, current, result.record, now, NOTED_REASON)
     if (saved.result !== 'taken') {
       return { week: saved.week, settled: result.settled, noted: result.noted, corrections: result.corrections, waiting: result.waiting }

@@ -4,10 +4,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  acceptCorrection, finalScore90, isLocked, parlayOutcome, settleByHand, settleWeek, unsettleLeg, voidLeg,
+  acceptCorrection, finalScore90, isParlayLocked, parlayOutcome, settleByHand, settleWeek, unsettleLeg, voidLeg,
   type FixtureScore,
 } from '../src/lib/bets/settle.ts'
-import { EMPTY_WEEK, isWeekRecord, TOMBSTONE, type Pick, type Settlement, type WeekRecord } from '../src/lib/bets/week-record.ts'
+import { isWeekRecord, type Pick, type Settlement, type WeekRecord } from '../src/lib/bets/week-record.ts'
 import { deepFreeze, leg, legsOf, parlay, uuid, weekOf } from './bet-samples.ts'
 
 const NOW = '2026-11-07T19:35:00.000Z'
@@ -294,20 +294,28 @@ test('what a parlay pays, worked out by hand', () => {
   const single = parlay(1, [leg(1, { odds: -110, settlement: settled('won') })], { stakeCents: 5000 })
   assert.deepEqual(parlayOutcome(single), { state: 'won', payoutCents: 9545, profitCents: 4545 })
 
-  // $25 on -110, -120 and +105 is exactly $179.375, which rounds up to $179.38.
+  // $25 on -110, -120 and +105 is exactly $179.375, which rounds down to
+  // $179.37, as bet365 rounds.
   const three = parlay(1, [-110, -120, 105].map((odds, i) => leg(i + 1, { odds, settlement: settled('won') })))
-  assert.deepEqual(parlayOutcome(three), { state: 'won', payoutCents: 17_938, profitCents: 15_438 })
+  assert.deepEqual(parlayOutcome(three), { state: 'won', payoutCents: 17_937, profitCents: 15_437 })
+
+  // A boost is a percent of the profit: 2.5% of the $68.75 profit on the
+  // first parlay is $1.71875, so it returns $95.46.
+  const boosted = { ...two(settled('won'), settled('won')), boostBps: 250 }
+  assert.deepEqual(parlayOutcome(boosted), { state: 'won', payoutCents: 9546, profitCents: 7046 })
+  assert.deepEqual(parlayOutcome({ ...two(settled('won'), settled('lost')), boostBps: 250 }), lost, 'a boost on a lost parlay pays nothing')
+  assert.deepEqual(parlayOutcome({ ...two(settled('dropped'), settled('dropped')), boostBps: 250 }), { state: 'void', payoutCents: 2500, profitCents: 0 }, 'nor on a void one')
 })
 
-test('a week locks once every leg in it is settled', () => {
-  assert.equal(isLocked(EMPTY_WEEK), false, 'an empty week')
-  assert.equal(isLocked(TOMBSTONE), false, 'a tombstone')
+test('a parlay locks once every leg in it is settled, whatever the others in its week do', () => {
   const week = weekOf(parlay(1, [leg(1)]), parlay(2, [leg(2), leg(3)]))
-  assert.equal(isLocked(week), false)
+  const locks = (record: typeof week) => record.parlays.map(isParlayLocked)
+  assert.deepEqual(locks(week), [false, false])
   const games = gamesOf(game(1, 'finished', [2, 0]), game(2, 'finished', [0, 0]), game(3, 'postponed'))
   const partly = settleWeek(week, games, NOW).record
-  assert.equal(isLocked(partly), false, 'one leg still open')
+  assert.deepEqual(locks(partly), [true, false], 'the first parlay is settled, and the second has a leg still open')
   const all = voidLeg(partly, uuid(1003), { outcome: 'dropped', reason: 'Postponed' }, games, NOW)
-  assert.equal(isLocked(all), true, 'a dropped leg counts as settled')
-  assert.equal(isLocked(unsettleLeg(all, uuid(1001))), false)
+  assert.deepEqual(locks(all), [true, true], 'a dropped leg counts as settled')
+  assert.deepEqual(locks(unsettleLeg(all, uuid(1001))), [false, true], 'taking a settlement away opens only its own parlay')
+  assert.equal(isParlayLocked({ ...parlay(3, []), legs: [] }), false, 'a parlay with no legs, which no record can hold, never locks')
 })

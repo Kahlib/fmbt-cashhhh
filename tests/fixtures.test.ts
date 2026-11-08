@@ -32,7 +32,7 @@ test("fixtures come back with their teams' codes, and kick-offs in the record's 
 
   // They work for adding a parlay and for settling it.
   const week = { season: 2026, competition: 'PL' as const, period: 'MW11' }
-  const added = addParlay(EMPTY_WEEK, week, fixtures, { stakeCents: 2500, legs: [{ fixtureId: 900_002, pick: 'H', odds: 150, confidence: 3 }] })
+  const added = addParlay(EMPTY_WEEK, week, fixtures, { stakeCents: 2500, boostBps: 0, legs: [{ fixtureId: 900_002, pick: 'H', odds: 150, confidence: 3 }] })
   assert.ok(added.ok)
   assert.deepEqual([added.parlay.legs[0]?.home, added.parlay.legs[0]?.kickoff], ['ARS', '2026-11-07T17:30:00.000Z'])
   const settled = settleWeek(added.record, byId(fixtures), '2026-11-07T19:30:00.000Z')

@@ -12,7 +12,7 @@
 //     fixtures. Everything you enter goes through them before it's saved.
 import { isUuid } from '../account/rows.ts'
 import { isIsoTime } from '../records/settings.ts'
-import { exactPayoutCents, isAmericanOdds, isStakeCents, MAX_PAYOUT_CENTS } from './odds.ts'
+import { exactPayoutCents, isAmericanOdds, isBoostBps, isStakeCents, MAX_PAYOUT_CENTS } from './odds.ts'
 
 export type Competition = 'PL' | 'UCL'
 export type Pick = 'H' | 'D' | 'A' // home win, draw, away win
@@ -44,6 +44,7 @@ export type Leg = {
 export type Parlay = {
   id: string
   stakeCents: number
+  boostBps: number                // a boost on the profit, in hundredths of a percent: 250 is 2.5%, 0 is none
   legs: Leg[]                     // one leg makes a single
 }
 
@@ -137,19 +138,20 @@ function isLeg(value: unknown): value is Leg {
     && (leg.settlement === null || isSettlement(leg.settlement, leg.pick))
 }
 
-// True if the parlay's payout, if every leg won, stays within the limit.
-function payoutFits(stakeCents: number, legs: readonly Leg[]): boolean {
-  return exactPayoutCents(stakeCents, legs.map(leg => leg.odds)) <= BigInt(MAX_PAYOUT_CENTS)
+// True if the parlay's payout, if every leg won, stays within the limit,
+// boost included.
+function payoutFits(stakeCents: number, legs: readonly Leg[], boostBps: number): boolean {
+  return exactPayoutCents(stakeCents, legs.map(leg => leg.odds), boostBps) <= BigInt(MAX_PAYOUT_CENTS)
 }
 
 function isParlay(value: unknown): value is Parlay {
-  if (!hasExactly(value, ['id', 'stakeCents', 'legs'])) return false
-  const { id, stakeCents, legs } = value
-  if (!isUuid(id) || !isStakeCents(stakeCents)) return false
+  if (!hasExactly(value, ['id', 'stakeCents', 'boostBps', 'legs'])) return false
+  const { id, stakeCents, boostBps, legs } = value
+  if (!isUuid(id) || !isStakeCents(stakeCents) || !isBoostBps(boostBps)) return false
   if (!Array.isArray(legs) || legs.length < 1 || legs.length > MAX_LEGS_PER_PARLAY || !legs.every(isLeg)) return false
   // Each game once per parlay: one parlay can't carry two picks on the same match.
   if (new Set(legs.map(leg => leg.fixtureId)).size !== legs.length) return false
-  return payoutFits(stakeCents, legs)
+  return payoutFits(stakeCents, legs, boostBps)
 }
 
 // Checks that a decrypted value really is a week record before anything uses
@@ -182,6 +184,7 @@ export type EntryProblem =
   | 'deleted'          // the week has been deleted
   | 'week full'        // the week already holds 100 parlays or 500 legs
   | 'stake'            // not from $0.01 to $10,000
+  | 'boost'            // not from 0% to 100%, in hundredths of a percent
   | 'no legs'
   | 'too many legs'    // over 40
   | 'same game twice'  // one parlay can't hold two picks on the same match
@@ -193,7 +196,7 @@ export type EntryProblem =
   | 'bad fixture'      // a game's teams or kick-off don't look right, which fixtures read the normal way never do
 
 export type NewLeg = { fixtureId: number; pick: Pick; odds: number; confidence: number }
-export type NewParlay = { stakeCents: number; legs: NewLeg[] }
+export type NewParlay = { stakeCents: number; boostBps: number; legs: NewLeg[] }
 
 // Adds a parlay to a week, after checking every part of it. Adding is
 // allowed on any week that isn't deleted, locked or not, since adding a
@@ -206,6 +209,7 @@ export function addParlay(
   const legCount = record.parlays.reduce((sum, parlay) => sum + parlay.legs.length, 0)
   if (record.parlays.length >= MAX_PARLAYS || legCount + entry.legs.length > MAX_LEGS) return fail('week full')
   if (!isStakeCents(entry.stakeCents)) return fail('stake')
+  if (!isBoostBps(entry.boostBps)) return fail('boost')
   if (entry.legs.length === 0) return fail('no legs')
   if (entry.legs.length > MAX_LEGS_PER_PARLAY) return fail('too many legs')
   if (new Set(entry.legs.map(leg => leg.fixtureId)).size !== entry.legs.length) return fail('same game twice')
@@ -230,9 +234,9 @@ export function addParlay(
       settlement: null,
     })
   }
-  if (!payoutFits(entry.stakeCents, legs)) return fail('payout too big')
+  if (!payoutFits(entry.stakeCents, legs, entry.boostBps)) return fail('payout too big')
 
-  const parlay: Parlay = { id: crypto.randomUUID(), stakeCents: entry.stakeCents, legs }
+  const parlay: Parlay = { id: crypto.randomUUID(), stakeCents: entry.stakeCents, boostBps: entry.boostBps, legs }
   const next: WeekRecord = { ...record, parlays: [...record.parlays, parlay] }
   // A last check of the whole thing, so nothing that fails here can be saved.
   // Everything above passed, so only a fixture with odd data, such as a team

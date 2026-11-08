@@ -4,11 +4,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  capChanges, chainHash, describeChanges, isAuditRecord, loadAuditLog, MAX_CHANGES, onlyAddsParlays, sealAuditEntry,
+  capChanges, chainHash, describeChanges, isAuditRecord, loadAuditLog, lockedChanges, MAX_CHANGES, sealAuditEntry,
   type AuditRecord, type Change,
 } from '../src/lib/bets/audit.ts'
 import { settleByHand, unsettleLeg } from '../src/lib/bets/settle.ts'
-import { isWeekRecord, TOMBSTONE, type Settlement, type WeekRecord } from '../src/lib/bets/week-record.ts'
+import { EMPTY_WEEK, isWeekRecord, TOMBSTONE, type Settlement, type WeekRecord } from '../src/lib/bets/week-record.ts'
 import { toBase64, utf8 } from '../src/lib/crypto/bytes.ts'
 import { decryptRecord, encryptRecord, RECORD_VERSION } from '../src/lib/crypto/records.ts'
 import { leg, parlay, quickAccount, tabOn, uuid, weekOf } from './bet-samples.ts'
@@ -93,6 +93,7 @@ test('the same week twice has no changes', () => {
 test('every field of a parlay and a leg is compared', () => {
   const cases: [string, WeekRecord, Change[]][] = [
     ['stake', changed(r => { if (r.parlays[0]) r.parlays[0].stakeCents = 5000 }), [{ what: 'Parlay 1 · stake in cents', from: 2500, to: 5000 }]],
+    ['boost', changed(r => { if (r.parlays[1]) r.parlays[1].boostBps = 250 }), [{ what: 'Parlay 2 · boost in basis points', from: 0, to: 250 }]],
     ['odds', changed(r => { firstLeg(r).odds = -110 }), [{ what: 'Parlay 1 · MCI v LIV · odds', from: 150, to: -110 }]],
     ['confidence', changed(r => { firstLeg(r).confidence = 5 }), [{ what: 'Parlay 1 · MCI v LIV · confidence', from: 3, to: 5 }]],
     ['kick-off', changed(r => { firstLeg(r).kickoff = '2026-11-07T20:00:00.000Z' }),
@@ -145,14 +146,54 @@ test('parlays and legs added, removed and reordered', () => {
   assert.deepEqual(describeChanges(TOMBSTONE, BEFORE), [happened('Week started again'), happened('Parlay 1 added'), happened('Parlay 2 added')])
 })
 
-test('adding parlays after the others is the only change that is never an edit', () => {
-  const added = changed(r => { r.parlays.push(parlay(3, [leg(4)])) })
-  assert.equal(onlyAddsParlays(BEFORE, added), true)
-  assert.equal(onlyAddsParlays(BEFORE, changed(r => { r.parlays.unshift(parlay(3, [leg(4)])) })), false, 'added in front')
-  assert.equal(onlyAddsParlays(BEFORE, changed(r => { r.parlays.push(parlay(3, [leg(4)])); firstLeg(r).odds = 160 })), false, 'added, and an edit')
-  assert.equal(onlyAddsParlays(BEFORE, structuredClone(BEFORE)), false, 'nothing added')
-  assert.equal(onlyAddsParlays(BEFORE, changed(r => { r.parlays.pop() })), false, 'one taken away')
-  assert.equal(onlyAddsParlays(TOMBSTONE, BEFORE), false, 'a deleted week started again')
+// Three parlays: the first and third locked, every leg settled, and the
+// second still open.
+const LOCKED = weekOf(
+  parlay(1, [leg(1, { settlement: WON }), leg(2, { home: 'ARS', away: 'CHE', settlement: WON })]),
+  parlay(2, [leg(3, { home: 'TOT', away: 'NEW' })]),
+  parlay(3, [leg(4, { home: 'EVE', away: 'WHU', settlement: WON })]),
+)
+function lockedChanged(change: (record: WeekRecord) => void): WeekRecord {
+  const copy = structuredClone(LOCKED)
+  change(copy)
+  assert.ok(isWeekRecord(copy), 'each change still makes a good record')
+  return copy
+}
+
+test('only changes to locked parlays go in an audit entry, numbered as they were', () => {
+  const none: [string, WeekRecord][] = [
+    ['nothing changed', structuredClone(LOCKED)],
+    ['the open parlay changed', lockedChanged(r => { if (r.parlays[1]) r.parlays[1].stakeCents = 5000 })],
+    ['the open parlay removed', lockedChanged(r => { r.parlays.splice(1, 1) })],
+    ['a parlay added after the others', lockedChanged(r => { r.parlays.push(parlay(4, [leg(5)])) })],
+    ['a parlay added in front', lockedChanged(r => { r.parlays.unshift(parlay(4, [leg(5)])) })],
+    ['the open parlay moved to the front', lockedChanged(r => { r.parlays.unshift(...r.parlays.splice(1, 1)) })],
+    ['the open leg settled', lockedChanged(r => { const open = r.parlays[1]?.legs[0]; if (open) open.settlement = WON })],
+  ]
+  for (const [name, after] of none) assert.deepEqual(lockedChanges(LOCKED, after), [], name)
+
+  const some: [string, WeekRecord, Change[]][] = [
+    ['odds in the first', lockedChanged(r => { firstLeg(r).odds = 160 }), [{ what: 'Parlay 1 · MCI v LIV · odds', from: 150, to: 160 }]],
+    ['a boost on the third', lockedChanged(r => { if (r.parlays[2]) r.parlays[2].boostBps = 500 }),
+      [{ what: 'Parlay 3 · boost in basis points', from: 0, to: 500 }]],
+    ['the third removed', lockedChanged(r => { r.parlays.splice(2, 1) }), [happened('Parlay 3 removed')]],
+    ['the locked ones swapped', lockedChanged(r => { r.parlays.reverse() }), [happened('Parlays reordered')]],
+    ['an open change and a locked one', lockedChanged(r => { firstLeg(r).odds = 160; if (r.parlays[1]) r.parlays[1].stakeCents = 5000 }),
+      [{ what: 'Parlay 1 · MCI v LIV · odds', from: 150, to: 160 }]],
+    ['a settlement taken away', unsettleLeg(LOCKED, uuid(1004)), [
+      { what: 'Parlay 3 · EVE v WHU · outcome', from: 'won', to: null },
+      { what: 'Parlay 3 · EVE v WHU · 90-minute score', from: [2, 1], to: null },
+      { what: 'Parlay 3 · EVE v WHU · how it settled', from: 'auto', to: null },
+      { what: 'Parlay 3 · EVE v WHU · promo', from: false, to: null },
+    ]],
+    ['the week deleted', TOMBSTONE, [happened('Week deleted'), happened('Parlay 1 removed'), happened('Parlay 3 removed')]],
+  ]
+  for (const [name, after, expected] of some) assert.deepEqual(lockedChanges(LOCKED, after), expected, name)
+
+  // With nothing locked, nothing ever needs an entry, not even deleting the week.
+  assert.deepEqual(lockedChanges(BEFORE, TOMBSTONE), [])
+  assert.deepEqual(lockedChanges(EMPTY_WEEK, LOCKED), [])
+  assert.deepEqual(lockedChanges(TOMBSTONE, LOCKED), [], 'a deleted week started again')
 })
 
 test('a long list of changes is capped, and says how many more there were', () => {

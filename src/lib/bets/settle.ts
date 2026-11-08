@@ -195,21 +195,23 @@ export type ParlayOutcome = { state: ParlayState; payoutCents: number | null; pr
 //   - pending while any leg is unsettled
 //   - void when every leg was dropped, which gives the stake back
 //   - otherwise won: the stake times every won leg's decimal odds, with
-//     dropped legs left out, rounded once to the nearest cent
+//     dropped legs left out, plus any boost, rounded down to the cent as
+//     bet365 rounds (odds.ts)
 export function parlayOutcome(parlay: Parlay): ParlayOutcome {
   const outcomes = parlay.legs.map(leg => leg.settlement?.outcome ?? null)
   if (outcomes.includes('lost')) return { state: 'lost', payoutCents: 0, profitCents: -parlay.stakeCents }
   if (outcomes.includes(null)) return { state: 'pending', payoutCents: null, profitCents: null }
   const wonOdds = parlay.legs.filter(leg => leg.settlement?.outcome === 'won').map(leg => leg.odds)
   if (wonOdds.length === 0) return { state: 'void', payoutCents: parlay.stakeCents, profitCents: 0 }
-  const payout = payoutCents(parlay.stakeCents, wonOdds)
+  const payout = payoutCents(parlay.stakeCents, wonOdds, parlay.boostBps)
   return { state: 'won', payoutCents: payout, profitCents: payout - parlay.stakeCents }
 }
 
-// A week locks once every leg in it is settled. After that, changing it
-// needs Admin mode and an audit entry (project plan, Locking). An empty week
-// and a tombstone have no legs, so they never lock.
-export function isLocked(record: WeekRecord): boolean {
-  const legs = record.parlays.flatMap(parlay => parlay.legs)
-  return legs.length > 0 && legs.every(leg => leg.settlement !== null)
+// A parlay locks once every leg in it is settled. After that, changing or
+// removing it needs Admin mode, a reason and an audit entry, while the
+// week's other parlays carry on as normal (project plan, Locking: decided
+// 5 November 2026). A parlay always has a leg, but one without any would
+// never lock.
+export function isParlayLocked(parlay: Parlay): boolean {
+  return parlay.legs.length > 0 && parlay.legs.every(leg => leg.settlement !== null)
 }

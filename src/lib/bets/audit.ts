@@ -1,7 +1,7 @@
-// The audit log (project plan, Locking): every change to a locked week, with
-// what changed, from what to what, when and why. Each entry is encrypted like
-// a week, and the database only ever adds entries, never changes or deletes
-// one, even for you (fmbt-security, section 5).
+// The audit log (project plan, Locking): every change to a locked parlay,
+// with what changed, from what to what, when and why. Each entry is
+// encrypted like a week, and the database only ever adds entries, never
+// changes or deletes one, even for you (fmbt-security, section 5).
 //
 // The entries form a chain. Entry 1 has no previous hash, and every later one
 // carries the SHA-256 of the previous entry's ciphertext. That hash is a
@@ -13,7 +13,8 @@ import { isWeekKey } from '../account/rows.ts'
 import { fromBase64, toHex } from '../crypto/bytes.ts'
 import { decryptRecord, encryptRecord, RECORD_VERSION } from '../crypto/records.ts'
 import { isIsoTime } from '../records/settings.ts'
-import { hasExactly, isReason, isScore, isWhole, type Leg, type Settlement, type Week, type WeekRecord } from './week-record.ts'
+import { isParlayLocked } from './settle.ts'
+import { hasExactly, isReason, isScore, isWhole, type Leg, type Parlay, type Settlement, type Week, type WeekRecord } from './week-record.ts'
 
 // A value in a change: a stake in cents, odds, a pick, a score, and so on.
 export type ChangeValue = null | boolean | number | string | [number, number]
@@ -66,7 +67,9 @@ const same = (a: ChangeValue, b: ChangeValue) => JSON.stringify(a) === JSON.stri
 // Every difference between two versions of a week. Parlays and legs are
 // matched by their IDs, and numbered as they were before the change. Every
 // field is compared, so an empty list means the two versions are the same.
-export function describeChanges(before: WeekRecord, after: WeekRecord): Change[] {
+// With `only`, it describes just the parlays with those IDs, and leaves out
+// added ones, which lockedChanges uses.
+export function describeChanges(before: WeekRecord, after: WeekRecord, only?: ReadonlySet<string>): Change[] {
   const changes: Change[] = []
   const note = (what: string, from: ChangeValue, to: ChangeValue) => {
     if (!same(from, to)) changes.push({ what, from, to })
@@ -75,13 +78,16 @@ export function describeChanges(before: WeekRecord, after: WeekRecord): Change[]
 
   if (before.deleted !== after.deleted) happened(after.deleted ? 'Week deleted' : 'Week started again')
   matchUp(before.parlays, after.parlays, {
+    include: (parlay: Parlay) => only === undefined || only.has(parlay.id),
     label: (_parlay, index) => `Parlay ${index + 1}`,
     added: happened,
     removed: happened,
     reordered: () => happened('Parlays reordered'),
     kept: (was, now, label) => {
       note(`${label} · stake in cents`, was.stakeCents, now.stakeCents)
+      note(`${label} · boost in basis points`, was.boostBps, now.boostBps)
       matchUp(was.legs, now.legs, {
+        include: () => true,
         label: leg => `${label} · ${leg.home} v ${leg.away}`,
         added: happened,
         removed: happened,
@@ -112,8 +118,10 @@ function describeLeg(was: Leg, now: Leg, label: string, note: (what: string, fro
 }
 
 // Pairs up two lists of things with IDs, and says what was added, removed,
-// reordered or kept.
+// reordered or kept. Things `include` turns down are skipped, though the
+// others keep their numbers.
 function matchUp<T extends { id: string }>(before: readonly T[], after: readonly T[], on: {
+  include: (item: T) => boolean
   label: (item: T, index: number) => string
   added: (label: string) => void
   removed: (label: string) => void
@@ -123,24 +131,28 @@ function matchUp<T extends { id: string }>(before: readonly T[], after: readonly
   const nowById = new Map(after.map(item => [item.id, item]))
   const wasIds = new Set(before.map(item => item.id))
   before.forEach((was, index) => {
+    if (!on.include(was)) return
     const now = nowById.get(was.id)
     if (now === undefined) on.removed(`${on.label(was, index)} removed`)
     else on.kept(was, now, on.label(was, index))
   })
   after.forEach((now, index) => {
-    if (!wasIds.has(now.id)) on.added(`${on.label(now, index)} added`)
+    if (!wasIds.has(now.id) && on.include(now)) on.added(`${on.label(now, index)} added`)
   })
-  const keptBefore = before.filter(item => nowById.has(item.id)).map(item => item.id)
-  const keptAfter = after.filter(item => wasIds.has(item.id)).map(item => item.id)
+  // The kept things that count, in their old order and their new one.
+  const keptBefore = before.filter(item => on.include(item) && nowById.has(item.id)).map(item => item.id)
+  const counted = new Set(keptBefore)
+  const keptAfter = after.filter(item => counted.has(item.id)).map(item => item.id)
   if (keptBefore.join() !== keptAfter.join()) on.reordered()
 }
 
-// True if `after` only adds parlays after the ones `before` has, and changes
-// nothing else. That's never editing, so it needs no Admin mode and no audit
-// entry, even on a locked week (project plan: "Adding a record isn't editing one").
-export function onlyAddsParlays(before: WeekRecord, after: WeekRecord): boolean {
-  if (after.parlays.length <= before.parlays.length) return false
-  return describeChanges(before, { ...after, parlays: after.parlays.slice(0, before.parlays.length) }).length === 0
+// The changes a save makes to parlays that were locked before it. They're
+// what an audit entry lists, and a save with any needs a reason (step 10
+// plan, decision 1). Adding parlays and changing open ones never count, but
+// deleting a week that holds a locked parlay does.
+export function lockedChanges(before: WeekRecord, after: WeekRecord): Change[] {
+  const locked = new Set(before.parlays.filter(isParlayLocked).map(parlay => parlay.id))
+  return locked.size === 0 ? [] : describeChanges(before, after, locked)
 }
 
 // Caps a list of changes at MAX_CHANGES.

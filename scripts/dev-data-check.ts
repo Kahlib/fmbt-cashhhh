@@ -7,8 +7,9 @@
 //   - adds a parlay on finished matches, saves it, and reads it back in a
 //     second tab, whose own save then makes the first tab's save find its
 //     version number taken
-//   - settles the parlay from the 90-minute scores, which locks the week
-//   - edits the locked week with an audit entry, then shows that a stale
+//   - settles the parlays from the 90-minute scores, which locks them, and
+//     checks a boosted one's return
+//   - edits a locked parlay with an audit entry, then shows that a stale
 //     tab's edit saves neither of its two rows
 //   - deletes the week with an audit entry, and reads it all back, the audit
 //     log's chain included
@@ -31,7 +32,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { AccountApi, AuditRow, Stored } from '../src/lib/account/api.ts'
 import { supabaseApi } from '../src/lib/account/supabase-api.ts'
 import { chainHash, loadAuditLog, sealAuditEntry } from '../src/lib/bets/audit.ts'
-import { isLocked } from '../src/lib/bets/settle.ts'
+import { isParlayLocked, parlayOutcome } from '../src/lib/bets/settle.ts'
 import { addParlay, byScoreFor, EMPTY_WEEK, resultOf, type NewLeg, type Pick, type Week, type WeekRecord } from '../src/lib/bets/week-record.ts'
 import { deleteWeek, loadWeek, loadWeeks, newWeek, saveWeek, settleWeeks, visibleWeeks, type LoadedWeek } from '../src/lib/bets/weeks.ts'
 import { byId, loadFixtures, loadSyncStatus, type Fixture } from '../src/lib/fixtures.ts'
@@ -149,7 +150,7 @@ const legs: NewLeg[] = games.map((game, i) => {
 })
 const a2 = await tab(EMAIL_A, loginToken('a'))
 const first = await step('W03', 'A parlay on finished games saves as the next version, and another tab reads it back', async () => {
-  const added = addParlay(start.record.deleted ? EMPTY_WEEK : start.record, WEEK, fixtures, { stakeCents: 2500, legs })
+  const added = addParlay(start.record.deleted ? EMPTY_WEEK : start.record, WEEK, fixtures, { stakeCents: 2500, boostBps: 0, legs })
   if (!added.ok) return { pass: false, detail: `the parlay was refused: ${added.problem}`, value: start }
   const week = savedWeek(await saveWeek(a, dataKey, start, added.record, now()))
   const back = (await loadWeek(a2, dataKey, WEEK)).week
@@ -160,9 +161,10 @@ const first = await step('W03', 'A parlay on finished games saves as the next ve
   }
 })
 
-// W04: two tabs.
+// W04: two tabs. The other tab adds a $10 single on the first game, the
+// one picked right, with a 2.5% boost.
 const twoTabs = await step('W04', "When another tab saves first, this tab's save finds its version number taken", async () => {
-  const more = addParlay(first.record, WEEK, fixtures, { stakeCents: 1000, legs: legs.slice(0, 1) })
+  const more = addParlay(first.record, WEEK, fixtures, { stakeCents: 1000, boostBps: 250, legs: legs.slice(0, 1) })
   if (!more.ok) return { pass: false, detail: `the parlay was refused: ${more.problem}`, value: first }
   const theirs = savedWeek(await saveWeek(a2, dataKey, first, more.record, now()))
   const mine = await saveWeek(a, dataKey, first, more.record, now())
@@ -174,17 +176,25 @@ const twoTabs = await step('W04', "When another tab saves first, this tab's save
   }
 })
 
-// W05: settle from dev's real 90-minute scores.
-const locked = await step('W05', 'Settling from the 90-minute scores saves a version, and locks the week', async () => {
+// W05: settle from dev's real 90-minute scores. The boosted single won at
+// +150, so it returns $10 × 2.5 = $25, plus 2.5% of the $15 profit, $0.375,
+// which rounds down to $25.37.
+const locked = await step('W05', 'Settling from the 90-minute scores saves a version, locks each parlay, and the boosted single returns $25.37', async () => {
   const [result] = await settleWeeks(a, dataKey, [twoTabs], byId(fixtures), now())
   if (result === undefined) return { pass: false, detail: 'nothing came back', value: twoTabs }
-  const allRight = result.week.record.parlays.flatMap(p => p.legs).every(l => {
+  const parlays = result.week.record.parlays
+  const allRight = parlays.flatMap(p => p.legs).every(l => {
     const game = games.find(g => g.id === l.fixtureId)
     return game !== undefined && l.settlement?.how === 'auto' && l.settlement.outcome === byScoreFor(l.pick, scoreOf(game))
   })
+  const lockedCount = parlays.filter(isParlayLocked).length
+  const single = parlays.at(-1)
+  const returned = single === undefined ? null : parlayOutcome(single).payoutCents
   return {
-    pass: allRight && isLocked(result.week.record) && result.week.version === twoTabs.newestVersion + 1,
-    detail: `${result.settled} legs settled, version ${result.week.version}, locked: ${isLocked(result.week.record)}`,
+    pass: allRight && lockedCount === parlays.length && single?.boostBps === 250 && returned === 2537
+      && result.week.version === twoTabs.newestVersion + 1,
+    detail: `${result.settled} legs settled, version ${result.week.version}, ${lockedCount} of ${parlays.length} parlays locked, `
+      + `the boosted single returns ${returned === null ? 'nothing' : `$${(returned / 100).toFixed(2)}`}`,
     value: result.week,
   }
 })
@@ -198,8 +208,8 @@ function withOdds(record: WeekRecord, odds: number): WeekRecord {
 }
 const auditBefore = await a.lastAuditEntry()
 
-// W06: a locked edit.
-const edited = await step('W06', 'A locked-week edit needs a reason, and saves its audit entry with it, chained to the last', async () => {
+// W06: an edit to a locked parlay.
+const edited = await step('W06', "A locked parlay's edit needs a reason, and saves its audit entry with it, chained to the last", async () => {
   const refused = await saveWeek(a, dataKey, locked, withOdds(locked.record, 160), now()).then(() => false, (error: unknown) => error instanceof RangeError)
   const week = savedWeek(await saveWeek(a, dataKey, locked, withOdds(locked.record, 160), now(), 'Dev data check: odds corrected'))
   const entry = await a.lastAuditEntry()
@@ -212,7 +222,7 @@ const edited = await step('W06', 'A locked-week edit needs a reason, and saves i
   }
 })
 
-// W07: two tabs on a locked week, both ways round.
+// W07: two tabs editing a locked parlay, both ways round.
 await step('W07', "A stale tab's locked edit saves neither its week version nor its audit entry", async () => {
   // A stale week version: the other tab still has the week from before W06.
   const entryBefore = await a.lastAuditEntry()
@@ -244,7 +254,7 @@ await step('W07', "A stale tab's locked edit saves neither its week version nor 
 })
 
 // W08: delete it, as Admin mode will.
-const deleted = await step('W08', 'Deleting the locked week saves a tombstone and its audit entry', async () => {
+const deleted = await step('W08', 'Deleting the week, with its locked parlays, saves a tombstone and its audit entry', async () => {
   const current = (await loadWeek(a, dataKey, WEEK)).week
   const entryBefore = await a.lastAuditEntry()
   const week = savedWeek(await deleteWeek(a, dataKey, current, now(), 'Dev data check: tidying up'))

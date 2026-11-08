@@ -1,12 +1,12 @@
 // Tests for src/lib/bets/weeks.ts: loading, saving and deleting weeks, locked
-// weeks and their audit entries, settling that retries, and every server call
+// parlays and their audit entries, settling that retries, and every server call
 // breaking in each save. They run against the fake server, with made-up data.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { isDeepStrictEqual } from 'node:util'
 import { ServerError, type AccountApi, type FixtureRow } from '../src/lib/account/api.ts'
 import { chainHash, isAuditRecord, loadAuditLog, type AuditRecord } from '../src/lib/bets/audit.ts'
-import { isLocked, settleByHand } from '../src/lib/bets/settle.ts'
+import { isParlayLocked, settleByHand } from '../src/lib/bets/settle.ts'
 import { addParlay, EMPTY_WEEK, isWeekRecord, TOMBSTONE, type NewParlay, type Week, type WeekRecord } from '../src/lib/bets/week-record.ts'
 import {
   CORRECTION_REASON, deleteWeek, loadWeek, loadWeeks, needsAudit, newWeek, NOTED_REASON, saveCorrection, saveWeek,
@@ -52,7 +52,10 @@ async function fixturesOf(api: AccountApi) {
 }
 
 // $25 on a home win at +150 in each of these games.
-const bet = (...fixtureIds: number[]): NewParlay => ({ stakeCents: 2500, legs: fixtureIds.map(fixtureId => ({ fixtureId, pick: 'H', odds: 150, confidence: 3 })) })
+const bet = (...fixtureIds: number[]): NewParlay => ({ stakeCents: 2500, boostBps: 0, legs: fixtureIds.map(fixtureId => ({ fixtureId, pick: 'H', odds: 150, confidence: 3 })) })
+
+// Which of a week's parlays are locked.
+const locks = (record: WeekRecord) => record.parlays.map(isParlayLocked)
 
 // The week with one more parlay, built the way the pages build it.
 async function withParlay(api: AccountApi, loaded: LoadedWeek, entry: NewParlay): Promise<WeekRecord> {
@@ -74,14 +77,15 @@ async function savedWeek({ tab, key }: Setup, week: Week, ...fixtureIds: number[
 }
 
 // A week with one parlay on one game, which ends 2-1, so the leg wins and
-// the week locks. Saved as versions 1 and 2. Matchweek 11's game is Man City
+// the parlay locks. Saved as versions 1 and 2. Matchweek 11's game is Man City
 // against Liverpool, and matchweek 12's is Liverpool against Arsenal.
 async function lockedWeek(setup: Setup, week: Week = MW11): Promise<LoadedWeek> {
   const game = week === MW11 ? 1 : 101
   const first = await savedWeek(setup, week, 900_000 + game)
   play(setup.server, finished(game, 2, 1, week === MW11 ? {} : LIV_ARS_12))
   const [settled] = await settleWeeks(setup.tab, setup.key, [first], await fixturesOf(setup.tab), NOW)
-  assert.ok(settled !== undefined && isLocked(settled.week.record))
+  assert.ok(settled !== undefined)
+  assert.deepEqual(locks(settled.week.record), [true])
   return settled.week
 }
 
@@ -108,8 +112,7 @@ const nameOf = (week: { season: number; competition: string; period: string }) =
 
 // Checks everything the server holds for the account: every version opens
 // and checks out, each week's versions count 1, 2, 3 with no gaps, every
-// change to a locked week other than adding parlays has the one audit entry
-// that says so, no audit entry lacks its version, and the log has no problems.
+// change to a locked parlay has the one audit entry that says so, no audit entry lacks its version, and the log has no problems.
 async function checkHistory(server: FakeServer, account: QuickAccount): Promise<void> {
   const weeks = new Map<string, { version: number; record: WeekRecord }[]>()
   for (const row of server.rowsOf(account.id, 'week_versions')) {
@@ -273,7 +276,7 @@ test('deleting a week saves a tombstone, which stays hidden until a parlay start
   const loaded = await loadWeeks(setup.tab, setup.key)
   assert.deepEqual(loaded.weeks, [deleted], "the week is still there, since its version numbers are taken")
   assert.deepEqual(visibleWeeks(loaded.weeks), [])
-  assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [], 'an unlocked week needs no audit entry')
+  assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [], 'a week with no locked parlay needs no audit entry')
   // Starting it again begins from an empty week, as version 3.
   const again = await withParlay(setup.tab, { ...deleted, record: EMPTY_WEEK }, bet(900_002))
   const restarted = saved(await saveWeek(setup.tab, setup.key, deleted, again, NOW))
@@ -282,10 +285,10 @@ test('deleting a week saves a tombstone, which stays hidden until a parlay start
 })
 
 // ---------------------------------------------------------------------------
-// Locked weeks and the audit log
+// Locked parlays and the audit log
 // ---------------------------------------------------------------------------
 
-test('changing a locked week needs a reason, and saves an audit entry with the new version', async () => {
+test('changing a locked parlay needs a reason, and saves an audit entry with the new version', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   const edited = withOdds(locked.record, 160)
@@ -307,14 +310,14 @@ test('changing a locked week needs a reason, and saves an audit entry with the n
   await checkHistory(setup.server, setup.account)
 })
 
-test('a locked week that is saved again unchanged needs no reason', async () => {
+test('a week with a locked parlay that is saved again unchanged needs no reason', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   assert.equal(needsAudit(locked.record, structuredClone(locked.record)), false)
   assert.deepEqual(await saveWeek(setup.tab, setup.key, locked, structuredClone(locked.record), LATER), { result: 'unchanged', week: locked })
 })
 
-test('a locked-week change after an unreadable version says which version it started from', async () => {
+test('a locked change after an unreadable version says which version it started from', async () => {
   const setup = await start()
   await lockedWeek(setup)
   await sneakIn(setup, 3, { note: 'not a week' })
@@ -325,14 +328,14 @@ test('a locked-week change after an unreadable version says which version it sta
   assert.deepEqual([audit?.fromVersion, audit?.toVersion], [2, 4])
 })
 
-test('a huge change to a locked week still saves, with its list of changes capped', async () => {
+test('a huge change to locked parlays still saves, with its list of changes capped', async () => {
   const setup = await start()
-  // 13 parlays and 500 legs, all settled, so the week is locked.
+  // 13 parlays and 500 legs, all settled, so every parlay is locked.
   const settledLeg = (n: number) => leg(n, { odds: -100_000, settlement: { outcome: 'won', byScore: 'won', score90: [1, 0], how: 'auto', reason: null, promo: false, settledAt: NOW } })
   const legs = (from: number, count: number) => Array.from({ length: count }, (_, i) => settledLeg(from + i))
   const big = weekOf(...Array.from({ length: 12 }, (_, i) => parlay(i + 1, legs(i * 40 + 1, 40))), parlay(13, legs(481, 20)))
   const week = saved(await saveWeek(setup.tab, setup.key, newWeek(MW11), big, NOW))
-  assert.ok(isLocked(week.record))
+  assert.ok(week.record.parlays.every(isParlayLocked))
   // Every leg's odds and confidence, and every stake: 1,013 changes.
   const edited: WeekRecord = { ...big, parlays: big.parlays.map(p => ({ ...p, stakeCents: 100, legs: p.legs.map(l => ({ ...l, odds: -99_999, confidence: 5 })) })) }
   saved(await saveWeek(setup.tab, setup.key, week, edited, LATER, 'Typed everything in wrong'))
@@ -349,18 +352,32 @@ test("a save whose audit entry wouldn't check out is refused", async () => {
   assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [])
 })
 
-test("adding a parlay to a locked week isn't an edit, so it needs no reason or audit entry", async () => {
+test("adding a parlay isn't an edit, and it never unlocks the locked one beside it", async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   const more = await withParlay(setup.tab, locked, bet(900_002))
   assert.equal(needsAudit(locked.record, more), false)
-  const result = saved(await saveWeek(setup.tab, setup.key, locked, more, LATER))
-  assert.equal(isLocked(result.record), false, 'its new leg is still to settle')
+  const week = saved(await saveWeek(setup.tab, setup.key, locked, more, LATER))
+  assert.deepEqual(locks(week.record), [true, false], 'its new leg is still to settle')
   assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [])
+
+  // The new parlay is open, so changing it needs no reason, and its boost
+  // comes back from the server as it went.
+  const stake = { ...week.record, parlays: week.record.parlays.map((each, i) => (i === 1 ? { ...each, stakeCents: 5000, boostBps: 250 } : each)) }
+  const changed = saved(await saveWeek(setup.tab, setup.key, week, stake, LATER))
+  assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [])
+  assert.equal((await loadWeek(setup.tab, setup.key, MW11)).week.record.parlays[1]?.boostBps, 250)
+
+  // The first is still locked, so changing it does, and its entry lists only that.
+  const both = withOdds({ ...changed.record, parlays: changed.record.parlays.map((each, i) => (i === 1 ? { ...each, stakeCents: 1000 } : each)) }, 160)
+  await assert.rejects(saveWeek(setup.tab, setup.key, changed, both, LATER), /needs a reason/)
+  saved(await saveWeek(setup.tab, setup.key, changed, both, LATER, 'The book had +160'))
+  const [audit] = await auditRecords(setup.server, setup.account)
+  assert.deepEqual(audit?.changes, [{ what: 'Parlay 1 · MCI v LIV · odds', from: 150, to: 160 }])
   await checkHistory(setup.server, setup.account)
 })
 
-test('deleting a locked week needs a reason, and its audit entry says what went', async () => {
+test('deleting a week that holds a locked parlay needs a reason, and its audit entry says what went', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   await assert.rejects(deleteWeek(setup.tab, setup.key, locked, LATER), RangeError)
@@ -385,7 +402,7 @@ test('audit entries number on from the last, each carrying the hash of the one b
   await checkHistory(setup.server, setup.account)
 })
 
-test('two tabs changing locked weeks at once: the second finds the audit number taken, and saves neither row', async () => {
+test('two tabs changing locked parlays at once: the second finds the audit number taken, and saves neither row', async () => {
   const setup = await start()
   const first = await lockedWeek(setup, MW11)
   const second = await lockedWeek(setup, MW12)
@@ -412,7 +429,7 @@ test('a week version that is taken takes its audit entry with it', async () => {
   await checkHistory(setup.server, setup.account)
 })
 
-test("a score correction on a locked week saves an audit entry, and on an unlocked one it doesn't", async () => {
+test('a score correction on a locked parlay saves an audit entry', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup) // won on 2-1
   play(setup.server, finished(1, 1, 1))
@@ -432,12 +449,13 @@ test("a score correction on a locked week saves an audit entry, and on an unlock
   await checkHistory(setup.server, setup.account)
 })
 
-test("accepting a correction on an unlocked week needs no audit entry", async () => {
+test('accepting a correction on an open parlay needs no audit entry', async () => {
   const setup = await start()
   const week = await savedWeek(setup, MW11, 900_001, 900_002)
   play(setup.server, finished(1, 2, 1))
   const [settled] = await settleWeeks(setup.tab, setup.key, [week], await fixturesOf(setup.tab), NOW)
-  assert.ok(settled !== undefined && !isLocked(settled.week.record))
+  assert.ok(settled !== undefined)
+  assert.deepEqual(locks(settled.week.record), [false], 'one leg settled, and one still open')
   play(setup.server, finished(1, 1, 1))
   const legId = week.record.parlays[0]?.legs[0]?.id ?? ''
   saved(await saveCorrection(setup.tab, setup.key, settled.week, legId, await fixturesOf(setup.tab), LATER))
@@ -445,10 +463,10 @@ test("accepting a correction on an unlocked week needs no audit entry", async ()
   await checkHistory(setup.server, setup.account)
 })
 
-test('noting a score on a locked week saves an audit entry, with the reason the app gives', async () => {
+test('noting a score on a locked parlay saves an audit entry, with the reason the app gives', async () => {
   const setup = await start()
   // A promo leg settled by hand while its match is on, after the other leg
-  // won: that locks the week.
+  // won: that locks the parlay.
   let week = await savedWeek(setup, MW11, 900_001, 900_002)
   play(setup.server, finished(1, 2, 0))
   play(setup.server, fixtureRow(2, { ...ARS_CHE, status: 'live', home_90: 2, away_90: 0 }))
@@ -456,8 +474,8 @@ test('noting a score on a locked week saves an audit entry, with the reason the 
   const promoLeg = week.record.parlays[0]?.legs[1]?.id ?? ''
   const byHand = settleByHand(week.record, promoLeg, { outcome: 'won', promo: true, reason: '2-Up paid out early' }, await fixturesOf(setup.tab), NOW)
   week = saved(await saveWeek(setup.tab, setup.key, week, byHand, NOW))
-  assert.ok(isLocked(week.record))
-  assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [], "the week wasn't locked before that save")
+  assert.deepEqual(locks(week.record), [true])
+  assert.deepEqual(setup.server.rowsOf(setup.account.id, 'audit_entries'), [], "the parlay wasn't locked before that save")
 
   // The match ends 2-2, and settling notes the score.
   play(setup.server, finished(2, 2, 2, ARS_CHE))
@@ -559,7 +577,7 @@ test('a save that breaks at any call leaves the old version or the new one, and 
   assert.equal(calls, 1)
 })
 
-test('a locked-week change that breaks at any call saves both rows or neither', async () => {
+test('a locked change that breaks at any call saves both rows or neither', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   const next = withOdds(locked.record, 160)
@@ -572,7 +590,7 @@ test('a locked-week change that breaks at any call saves both rows or neither', 
   assert.equal(calls, 2)
 })
 
-test('deleting a locked week that breaks at any call saves both rows or neither', async () => {
+test('deleting a week with a locked parlay that breaks at any call saves both rows or neither', async () => {
   const setup = await start()
   const locked = await lockedWeek(setup)
   const calls = await everyFault(
@@ -586,8 +604,9 @@ test('deleting a locked week that breaks at any call saves both rows or neither'
 
 test('settling that breaks at any call leaves every week loadable, and settling again finishes', async () => {
   const setup = await start()
-  // Matchweek 11 has two legs to settle. Matchweek 12 is locked, with a promo
-  // leg settled by hand while its match was on, so settling notes its score.
+  // Matchweek 11 has two legs to settle. Matchweek 12's parlays are both
+  // locked, the second by a promo leg settled by hand while its match was on,
+  // so settling notes its score.
   const mw11 = await savedWeek(setup, MW11, 900_001, 900_002)
   const locked = await lockedWeek(setup, MW12)
   const more = saved(await saveWeek(setup.tab, setup.key, locked, await withParlay(setup.tab, locked, bet(900_102)), NOW))
@@ -595,7 +614,7 @@ test('settling that breaks at any call leaves every week loadable, and settling 
   const promoLeg = more.record.parlays[1]?.legs[0]?.id ?? ''
   const promo = saved(await saveWeek(setup.tab, setup.key, more,
     settleByHand(more.record, promoLeg, { outcome: 'won', promo: true, reason: '2-Up paid out early' }, await fixturesOf(setup.tab), NOW), NOW))
-  assert.ok(isLocked(promo.record))
+  assert.deepEqual(locks(promo.record), [true, true])
   play(setup.server, finished(1, 2, 1))
   play(setup.server, finished(2, 1, 1, ARS_CHE))
   play(setup.server, finished(102, 2, 2, TOT_NEW_12))

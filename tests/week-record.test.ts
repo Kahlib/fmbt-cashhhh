@@ -49,7 +49,7 @@ function withField(path: readonly (string | number)[], to: unknown, record: unkn
 
 // A week with one leg, picking `pick`, settled as given.
 const settledAs = (settlement: unknown, pick: Pick = 'H'): unknown => ({
-  schema: 1, deleted: false, parlays: [{ id: uuid(1), stakeCents: 2500, legs: [{ ...leg(1, { pick }), settlement }] }],
+  schema: 1, deleted: false, parlays: [{ id: uuid(1), stakeCents: 2500, boostBps: 0, legs: [{ ...leg(1, { pick }), settlement }] }],
 })
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ test('anything that is not a record object fails', () => {
 test('a missing or extra field fails, at every level', () => {
   const levels: [string, (string | number)[], string[]][] = [
     ['the record', [], ['schema', 'deleted', 'parlays']],
-    ['a parlay', ['parlays', 0], ['id', 'stakeCents', 'legs']],
+    ['a parlay', ['parlays', 0], ['id', 'stakeCents', 'boostBps', 'legs']],
     ['a leg', LEG, ['id', 'fixtureId', 'home', 'away', 'kickoff', 'pick', 'odds', 'confidence', 'settlement']],
     ['a settlement', SETTLEMENT, ['outcome', 'byScore', 'score90', 'how', 'reason', 'promo', 'settledAt']],
   ]
@@ -94,6 +94,7 @@ test('every field is checked, with junk of every type', () => {
     ['parlays', ['parlays'], [{}, 'none', [1], null]],
     ['a parlay ID', ['parlays', 0, 'id'], ['not-a-uuid', uuid(0xabcdef).toUpperCase(), '', 1, null]],
     ['a stake', ['parlays', 0, 'stakeCents'], [0, -2500, 1_000_001, 2500.5, '2500', Number.NaN, null]],
+    ['a boost', ['parlays', 0, 'boostBps'], [-1, 10_001, 2.5, '250', Number.NaN, Number.POSITIVE_INFINITY, null, false]],
     ['legs', ['parlays', 0, 'legs'], [[], {}, [1], null]],
   ]
   const legFields: [string, unknown[]][] = [
@@ -143,6 +144,7 @@ test('every field of every kind of settlement is checked', () => {
 test('the edges of each range pass', () => {
   const good: [string, (string | number)[], unknown[]][] = [
     ['a stake', ['parlays', 0, 'stakeCents'], [1, 1_000_000]],
+    ['a boost', ['parlays', 0, 'boostBps'], [0, 1, 250, 10_000]],
     ['odds', [...LEG, 'odds'], [100, -100, 100_000, -100_000]],
     ['confidence', [...LEG, 'confidence'], [1, 5]],
     ['a game ID', [...LEG, 'fixtureId'], [1, Number.MAX_SAFE_INTEGER]],
@@ -261,6 +263,8 @@ test('a parlay that could pay over $100 million fails', () => {
   assert.equal(isWeekRecord(weekOf(atLimit)), true)
   const over = parlay(1, [leg(1, { odds: 99_900 }), leg(2, { odds: 901 })], { stakeCents: 1_000_000 })
   assert.equal(isWeekRecord(weekOf(over)), false)
+  // A boost counts too: a 0.01% boost on that $99,990,000 profit adds $9,999.
+  assert.equal(isWeekRecord(weekOf({ ...atLimit, boostBps: 1 })), false, 'boosted over the limit')
 })
 
 test('a tombstone holds no parlays', () => {
@@ -289,7 +293,7 @@ const FIXTURES: WeekFixture[] = [
 ]
 
 const entryLeg = (fixtureId: number, change: Partial<NewLeg> = {}): NewLeg => ({ fixtureId, pick: 'H', odds: 150, confidence: 3, ...change })
-const single = (change: Partial<NewLeg> = {}): NewParlay => ({ stakeCents: 2500, legs: [entryLeg(900_001, change)] })
+const single = (change: Partial<NewLeg> = {}): NewParlay => ({ stakeCents: 2500, boostBps: 0, legs: [entryLeg(900_001, change)] })
 
 // The result of a parlay that should have been added, or a clear failure.
 function added(result: ReturnType<typeof addParlay>) {
@@ -305,11 +309,12 @@ function problemWith(entry: NewParlay, record: WeekRecord = EMPTY_WEEK, fixtures
 
 test("adding a parlay copies each game's teams and kick-off, and changes nothing it was given", () => {
   const before = deepFreeze(structuredClone(EMPTY_WEEK))
-  const entry = deepFreeze({ stakeCents: 1234, legs: [entryLeg(900_001, { confidence: 5 }), entryLeg(900_002, { pick: 'D', odds: 240 })] })
+  const entry = deepFreeze({ stakeCents: 1234, boostBps: 250, legs: [entryLeg(900_001, { confidence: 5 }), entryLeg(900_002, { pick: 'D', odds: 240 })] })
   const result = added(addParlay(before, WEEK, deepFreeze(structuredClone(FIXTURES)), entry))
 
   assert.deepEqual(result.record.parlays, [result.parlay])
   assert.equal(result.parlay.stakeCents, 1234)
+  assert.equal(result.parlay.boostBps, 250)
   const [first, second] = result.parlay.legs
   assert.deepEqual({ ...first, id: 'new' }, {
     id: 'new', fixtureId: 900_001, home: 'MCI', away: 'LIV', kickoff: KICKOFF, pick: 'H', odds: 150, confidence: 5, settlement: null,
@@ -326,29 +331,35 @@ test("adding a parlay copies each game's teams and kick-off, and changes nothing
 
 test('a game in one parlay can go in another, but not twice in one', () => {
   const one = added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, single()))
-  const two = added(addParlay(one.record, WEEK, FIXTURES, { stakeCents: 1000, legs: [entryLeg(900_001, { pick: 'A', odds: 320 }), entryLeg(900_002)] }))
+  const two = added(addParlay(one.record, WEEK, FIXTURES, { stakeCents: 1000, boostBps: 0, legs: [entryLeg(900_001, { pick: 'A', odds: 320 }), entryLeg(900_002)] }))
   assert.equal(two.record.parlays.length, 2)
   assert.deepEqual(two.record.parlays[0], one.parlay, 'the first parlay is kept as it was')
-  assert.equal(problemWith({ stakeCents: 2500, legs: [entryLeg(900_001), entryLeg(900_001, { pick: 'D' })] }), 'same game twice')
+  assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: [entryLeg(900_001), entryLeg(900_001, { pick: 'D' })] }), 'same game twice')
 })
 
 test('every problem with an entry is caught', () => {
   assert.equal(problemWith(single(), TOMBSTONE), 'deleted')
   for (const stakeCents of [0, -2500, 1_000_001, 2500.5, Number.NaN]) assert.equal(problemWith({ ...single(), stakeCents }), 'stake', String(stakeCents))
-  assert.equal(problemWith({ stakeCents: 2500, legs: [] }), 'no legs')
+  for (const boostBps of [-1, 10_001, 2.5, Number.NaN]) assert.equal(problemWith({ ...single(), boostBps }), 'boost', String(boostBps))
+  for (const boostBps of [0, 250, 10_000]) assert.equal(problemWith({ ...single(), boostBps }), 'added', String(boostBps))
+  assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: [] }), 'no legs')
 
   const games = (count: number) => Array.from({ length: count }, (_, i) => entryLeg(910_000 + i, { odds: -100_000 }))
-  assert.equal(problemWith({ stakeCents: 2500, legs: games(MAX_LEGS_PER_PARLAY) }), 'added', '40 legs')
-  assert.equal(problemWith({ stakeCents: 2500, legs: games(MAX_LEGS_PER_PARLAY + 1) }), 'too many legs')
+  assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: games(MAX_LEGS_PER_PARLAY) }), 'added', '40 legs')
+  assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: games(MAX_LEGS_PER_PARLAY + 1) }), 'too many legs')
 
   for (const fixtureId of [900_101, 900_201, 900_202, 900_301, 999_999]) {
-    assert.equal(problemWith({ stakeCents: 2500, legs: [entryLeg(fixtureId)] }), 'not this week', String(fixtureId))
+    assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: [entryLeg(fixtureId)] }), 'not this week', String(fixtureId))
   }
   for (const pick of ['X', 'h', '']) assert.equal(problemWith(single({ pick: pick as Pick })), 'pick', pick)
   for (const odds of [99, -99, 0, 150.5, 100_001, Number.NaN]) assert.equal(problemWith(single({ odds })), 'odds', String(odds))
   for (const confidence of [0, 6, 2.5, Number.NaN]) assert.equal(problemWith(single({ confidence })), 'confidence', String(confidence))
-  const huge = { stakeCents: 1_000_000, legs: [entryLeg(900_001, { odds: 100_000 }), entryLeg(900_002, { odds: 100_000 })] }
+  const huge = { stakeCents: 1_000_000, boostBps: 0, legs: [entryLeg(900_001, { odds: 100_000 }), entryLeg(900_002, { odds: 100_000 })] }
   assert.equal(problemWith(huge), 'payout too big')
+  // $10,000 at +99900 and +900 pays exactly $100 million, until a boost tips it over.
+  const atLimit = { stakeCents: 1_000_000, boostBps: 0, legs: [entryLeg(900_001, { odds: 99_900 }), entryLeg(900_002, { odds: 900 })] }
+  assert.equal(problemWith(atLimit), 'added')
+  assert.equal(problemWith({ ...atLimit, boostBps: 1 }), 'payout too big')
 })
 
 test('a full week takes nothing more', () => {
@@ -359,7 +370,7 @@ test('a full week takes nothing more', () => {
   const nearlyFull = weekOf(...Array.from({ length: 12 }, (_, i) => parlay(i + 1, cheapLegs(i * 40 + 1, 40))), parlay(13, cheapLegs(481, 19)))
   assert.equal(isWeekRecord(nearlyFull), true)
   assert.equal(problemWith(single(), nearlyFull), 'added')
-  assert.equal(problemWith({ stakeCents: 2500, legs: [entryLeg(900_001), entryLeg(900_002)] }, nearlyFull), 'week full')
+  assert.equal(problemWith({ stakeCents: 2500, boostBps: 0, legs: [entryLeg(900_001), entryLeg(900_002)] }, nearlyFull), 'week full')
 })
 
 test('a game whose details look wrong is refused', () => {
@@ -369,8 +380,8 @@ test('a game whose details look wrong is refused', () => {
 })
 
 test("checking a changed week against that week's fixtures", () => {
-  const first = added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, { stakeCents: 2500, legs: [entryLeg(900_001), entryLeg(900_002)] })).record
-  const week = added(addParlay(first, WEEK, FIXTURES, { stakeCents: 1000, legs: [entryLeg(900_003)] })).record
+  const first = added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, { stakeCents: 2500, boostBps: 0, legs: [entryLeg(900_001), entryLeg(900_002)] })).record
+  const week = added(addParlay(first, WEEK, FIXTURES, { stakeCents: 1000, boostBps: 0, legs: [entryLeg(900_003)] })).record
   assert.equal(checkWeek(week, WEEK, FIXTURES), null)
   assert.equal(checkWeek(EMPTY_WEEK, WEEK, FIXTURES), null)
   assert.equal(checkWeek(withField([...LEG, 'fixtureId'], 900_101, week) as WeekRecord, WEEK, FIXTURES), 'not this week', 'a leg moved to next week')

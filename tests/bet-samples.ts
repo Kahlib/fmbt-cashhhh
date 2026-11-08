@@ -19,9 +19,9 @@ export function leg(n: number, change: Partial<Leg> = {}): Leg {
   }
 }
 
-// A $25 parlay with the ID uuid(n).
+// A $25 parlay with the ID uuid(n), and no boost.
 export function parlay(n: number, legs: Leg[], change: Partial<Parlay> = {}): Parlay {
-  return { id: uuid(n), stakeCents: 2500, legs, ...change }
+  return { id: uuid(n), stakeCents: 2500, boostBps: 0, legs, ...change }
 }
 
 export const weekOf = (...parlays: Parlay[]): WeekRecord => ({ schema: 1, deleted: false, parlays })
