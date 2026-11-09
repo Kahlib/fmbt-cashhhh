@@ -16,11 +16,12 @@
 // so the tests can show that a flow stopping anywhere still leaves a way in.
 import { createHash, randomUUID } from 'node:crypto'
 import {
-  ServerError, type AccountApi, type AuditRow, type AuthResult, type FixtureRow, type RecordTable, type Rows, type SaveResult,
+  ServerError, type AccountApi, type AuditRow, type AuthResult, type FixtureRow, type InviteRow, type RecordTable, type Rows, type SaveResult,
   type Stored, type SyncStatusRow, type Table, type TeamRow, type WeekKey, type WeekRow,
 } from '../src/lib/account/api.ts'
 import { isRow } from '../src/lib/account/rows.ts'
 import { tidyEmail } from '../src/lib/crypto/kdf.ts'
+import { isInviteEmail } from '../src/lib/invites.ts'
 import type { KeyWrapKind } from '../src/lib/crypto/keys.ts'
 
 // How one call can break:
@@ -44,7 +45,8 @@ type Account = {
 type ServerRow<T extends Table> = Stored<Rows[T]> & { user_id: string }
 type State = {
   clock: number // milliseconds
-  invites: string[]
+  invites: { email: string; addedAt: string }[]
+  admins: string[] // account IDs, as in private.app_admins
   accounts: Account[]
   rows: { [T in Table]: ServerRow<T>[] }
   football: { teams: TeamRow[]; fixtures: FixtureRow[]; syncStatus: SyncStatusRow }
@@ -63,6 +65,7 @@ export class FakeServer {
     this.state = state ?? {
       clock: Date.parse('2026-11-02T12:00:00.000Z'),
       invites: [],
+      admins: [],
       accounts: [],
       rows: { key_wraps: [], week_versions: [], settings_versions: [], audit_entries: [] },
       football: { teams: [], fixtures: [], syncStatus: { last_attempt_at: null, last_success_at: null } },
@@ -79,7 +82,13 @@ export class FakeServer {
   }
 
   invite(email: string): void {
-    this.state.invites.push(tidyEmail(email))
+    this.state.invites.push({ email: tidyEmail(email), addedAt: this.now() })
+  }
+
+  makeAdmin(email: string): void {
+    const account = this.account(email)
+    if (account === undefined) throw new Error(`No account for ${email}`)
+    this.state.admins.push(account.id)
   }
 
   advance(milliseconds: number): void {
@@ -176,7 +185,7 @@ export class FakeTab implements AccountApi {
     return this.run<AuthResult>(() => {
       const tidy = tidyEmail(email)
       if (this.server.account(tidy) !== undefined) return { ok: false, problem: 'exists' }
-      if (!this.server.state.invites.includes(tidy)) return { ok: false, problem: 'not-invited' }
+      if (!this.server.state.invites.some(each => each.email === tidy)) return { ok: false, problem: 'not-invited' }
       const account: Account = { id: randomUUID(), email: tidy, loginToken, proofHash: null, recoveryTries: [] }
       this.server.state.accounts.push(account)
       this.signInAs(account)
@@ -378,6 +387,46 @@ export class FakeTab implements AccountApi {
     }, () => {
       throw new ServerError()
     })
+  }
+
+  // invite_list, invite_add and invite_remove: for app admins only, and
+  // emails tidied and checked as the database does.
+  inviteList(): Promise<InviteRow[] | null> {
+    return this.run(() => {
+      if (!this.isAdmin()) return null
+      return [...this.server.state.invites].reverse().map(each => ({
+        email: each.email, added_at: each.addedAt, has_account: this.server.state.accounts.some(account => account.email === each.email),
+      }))
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  inviteAdd(email: string): Promise<boolean> {
+    return this.run(() => {
+      if (!this.isAdmin()) return false
+      const tidy = tidyEmail(email)
+      if (!isInviteEmail(tidy)) throw new ServerError() // the table's check refuses it
+      if (!this.server.state.invites.some(each => each.email === tidy)) this.server.state.invites.push({ email: tidy, addedAt: this.server.now() })
+      return true
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  inviteRemove(email: string): Promise<boolean> {
+    return this.run(() => {
+      if (!this.isAdmin()) return false
+      const tidy = tidyEmail(email)
+      this.server.state.invites = this.server.state.invites.filter(each => each.email !== tidy)
+      return true
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
+  private isAdmin(): boolean {
+    return this.server.state.admins.includes(this.me().id)
   }
 
   // An insert, with the database's checks.

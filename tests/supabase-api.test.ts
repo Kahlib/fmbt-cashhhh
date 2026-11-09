@@ -318,3 +318,26 @@ test('the fixtures in a span: kick-off from its start up to its end, and a bad s
   await assert.rejects(answering([{ ...fixture, status: 'IN_PLAY' }]).fixturesBetween(from, to), ServerError)
   await assert.rejects(answering([{ ...fixture, kickoff: 'soon' }]).fixturesBetween(from, to), ServerError)
 })
+
+test('the invite calls: by name, refused for anyone but an app admin, and every row checked', async () => {
+  const list = [{ email: 'sam@example.com', added_at: '2026-11-08T17:00:00+00:00', has_account: false }]
+  const refused = { status: 400, body: { code: 'P0001', message: 'Not allowed.' } }
+  const ok = harness(() => ({ status: 200, body: list }))
+  assert.deepEqual(await ok.api.inviteList(), list)
+  assert.equal(ok.requests[0]?.path, '/rest/v1/rpc/invite_list')
+  assert.equal(await harness(() => refused).api.inviteList(), null)
+  for (const bad of [[{ ...list[0], extra: 1 }], [{ ...list[0], has_account: 'no' }], [{ ...list[0], added_at: 'yesterday' }], { email: 'sam@example.com' }]) {
+    await assert.rejects(harness(() => ({ status: 200, body: bad })).api.inviteList(), ServerError)
+  }
+  await assert.rejects(harness(() => 'network-error').api.inviteList(), ServerError)
+
+  for (const name of ['inviteAdd', 'inviteRemove'] as const) {
+    const sent = harness(() => ({ status: 204 }))
+    assert.equal(await sent.api[name]('sam@example.com'), true)
+    assert.equal(sent.requests[0]?.path, `/rest/v1/rpc/${name === 'inviteAdd' ? 'invite_add' : 'invite_remove'}`)
+    assert.deepEqual(JSON.parse(sent.requests[0]?.body ?? '{}'), { p_email: 'sam@example.com' })
+    assert.equal(await harness(() => refused).api[name]('sam@example.com'), false)
+    await assert.rejects(harness(() => ({ status: 400, body: { code: '23514', message: 'violates check constraint' } })).api[name]('x'), ServerError)
+  }
+})
+

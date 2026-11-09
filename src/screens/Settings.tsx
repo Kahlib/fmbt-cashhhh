@@ -1,5 +1,6 @@
 // Settings: security and backups (canvas: "Settings: security and backups"
-// and "Settings: after a key change"). The signed-in frame round it is
+// and "Settings: after a key change"), then the audit log and, for app
+// admins, the invite list (step 10.5). The signed-in frame round it is
 // SignedIn's, from step 10.
 import { useCallback, useEffect, useState } from 'react'
 import type { AccountApi, Stored, WeekRow } from '../lib/account/api.ts'
@@ -16,8 +17,10 @@ import { useAdmin } from '../components/admin.ts'
 import { PageHead } from '../components/Layout.tsx'
 import { Dialog, Toast } from '../components/Overlays.tsx'
 import { backupFileProblem, readBackupFile } from '../components/files.ts'
+import { AuditLog } from './AuditLog.tsx'
 import { BackupSteps } from './BackupSteps.tsx'
 import { ChangePasswordDialog } from './ChangePasswordDialog.tsx'
+import { Invites } from './Invites.tsx'
 import { OFFLINE } from './messages.ts'
 import { RestoreDialog } from './RestoreDialog.tsx'
 
@@ -192,6 +195,10 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
           {restoreProblem !== null ? <Hint tone="bad">{restoreProblem}</Hint>
             : <Hint>Restoring adds anything in the file that's missing here. It never replaces or deletes what's already saved.</Hint>}
         </section>
+
+        {/* Opened again whenever the panels above reload, since a restore can add entries. */}
+        <AuditLog key={version} api={api} unlocked={unlocked} />
+        <Invites api={api} myEmail={unlocked.email} onToast={setToast} />
       </div>
 
       {open?.kind === 'change-password' && (

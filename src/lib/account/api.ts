@@ -93,7 +93,17 @@ export interface AccountApi {
   // their live window this way every minute, rather than the whole season.
   fixturesBetween(from: string, to: string): Promise<FixtureRow[]>
   syncStatus(): Promise<SyncStatusRow>
+
+  // Invites, for app admins (step 10.5). The database refuses anyone else,
+  // so the list comes back as null, and adding or removing as false. Adding
+  // an email that's already on the list changes nothing, and is still true.
+  inviteList(): Promise<InviteRow[] | null>
+  inviteAdd(email: string): Promise<boolean>
+  inviteRemove(email: string): Promise<boolean>
 }
+
+// One invite, as invite_list returns it, newest first.
+export type InviteRow = { email: string; added_at: string; has_account: boolean }
 
 // Thrown when the server can't be reached or answers something unexpected.
 // The message is safe to show: it never includes what the server said.

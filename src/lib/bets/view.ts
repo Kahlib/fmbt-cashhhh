@@ -3,7 +3,7 @@
 // Nothing here saves anything, so the pages only ever draw what these say.
 import type { Fixture } from '../fixtures.ts'
 import { clockTime, count, dayAndTime, formatDay, money, oddsText, percentText } from '../format.ts'
-import type { Change, ChangeValue } from './audit.ts'
+import type { AuditEntry, AuditProblem, Change, ChangeValue } from './audit.ts'
 import { boostCents, combinedOdds, payoutCents } from './odds.ts'
 import { finalScore90, isParlayLocked, parlayOutcome, type ParlayState } from './settle.ts'
 import { byScoreFor, type Leg, type Parlay, type Pick, type WeekRecord } from './week-record.ts'
@@ -199,4 +199,22 @@ export function changeWords(change: Change): string {
   const to = change.to === null ? null : field.value(change.to)
   if (field.words !== undefined) return `${where}: ${field.words(from, to)}`
   return `${where}: ${field.name} from ${from ?? 'nothing'} to ${to ?? 'nothing'}`
+}
+
+// The line at the top of Settings' audit log (step 10.5): that it checks
+// out, or the first thing wrong with it. Null while it's empty.
+export function auditCheck(entries: readonly AuditEntry[], problems: readonly AuditProblem[]): { ok: boolean; text: string } | null {
+  const first = problems[0]
+  if (first === undefined) {
+    if (entries.length === 0) return null
+    return { ok: true, text: entries.length === 1 ? 'Its 1 entry opens and checks out.' : `All ${entries.length.toLocaleString('en-GB')} entries open and check out, and each is linked to the one before it.` }
+  }
+  const what = first.kind === 'missing' ? (first.from === first.to ? `Entry ${first.from} is missing` : `Entries ${first.from} to ${first.to} are missing`)
+    : first.kind === 'broken' ? `Entry ${first.seq} doesn't link to entry ${first.seq - 1}`
+      : `Entry ${first.seq} doesn't open`
+  const more = problems.length - 1
+  return {
+    ok: false,
+    text: `${what}, so something in the log changed after it was saved.${more > 0 ? ` It has ${count(more, 'other problem', 'other problems')} too.` : ''} Your backups hold their own copy of the log.`,
+  }
 }

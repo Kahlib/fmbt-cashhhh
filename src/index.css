@@ -630,3 +630,24 @@ table.ledger tr.club-group th { padding: 18px 0 6px; font-size: 12px; font-weigh
 table.ledger tr.none td, table.ledger tr.none .club { color: var(--text-3); }
 table.ledger tr.none .bd { opacity: .45; }
 table.ledger td.none-side { font-size: 12px; color: var(--text-3); }
+
+/* ----- step 10.5: Settings' audit log and invites (the canvas "FMBT Settings: invites and audit log") ----- */
+.log-check { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; font-size: 13px; color: var(--text-2); background: var(--tile); border: 1px solid var(--hair); border-radius: var(--r-box); }
+.log-check .dot-icon { margin-top: 1px; }
+.log-check.bad { border-color: var(--bad-t); color: var(--text); }
+.log { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.entry { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.entry-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; }
+.entry-h b { font-weight: 650; }
+.seq { font-size: 12px; font-weight: 650; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.when { margin-left: auto; font-size: 12px; color: var(--text-3); }
+.why { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.why span { color: var(--text-3); }
+.entry .changes { overflow-wrap: anywhere; }
+.tag.bad { color: var(--bad-t); }
+.invite-add { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+.invite-add .field { flex: 0 1 360px; }
+.invite-add .btn { margin-top: 24px; }
+table.invites th { font-size: 12px; font-weight: 550; color: var(--text-3); }
+table.invites td:first-child { font-weight: 600; overflow-wrap: anywhere; white-space: normal; }
+table.invites .tag { margin-left: 8px; }

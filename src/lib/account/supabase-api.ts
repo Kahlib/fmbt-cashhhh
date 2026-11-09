@@ -5,7 +5,7 @@
 // anything unexpected becomes a ServerError, whose message never repeats
 // what the server said. Every row that comes back is checked before use.
 import type { AuthError, SupabaseClient } from '@supabase/supabase-js'
-import { ServerError, type AccountApi, type AuthResult, type Rows, type SaveResult, type Stored, type Table } from './api.ts'
+import { ServerError, type AccountApi, type AuthResult, type InviteRow, type Rows, type SaveResult, type Stored, type Table } from './api.ts'
 import { columnNames, FOOTBALL_COLUMNS, isFixtureRow, isStoredRow, isSyncStatusRow, isTeamRow } from './rows.ts'
 import type { SupabaseConfig } from '../config.ts'
 import { isIsoTime } from '../records/settings.ts'
@@ -159,6 +159,18 @@ export function supabaseApi(
       return rows[0]
     },
 
+    // Invites (step 10.5). P0001 is the function refusing on purpose
+    // ("Not allowed."), because this account isn't an app admin.
+    async inviteList() {
+      const { data, error } = await client.rpc('invite_list')
+      if (error?.code === 'P0001') return null
+      const rows: unknown = data
+      if (error !== null || !Array.isArray(rows) || !rows.every(isInviteRow)) throw new ServerError()
+      return rows
+    },
+    inviteAdd: email => inviteCall(client, 'invite_add', email),
+    inviteRemove: email => inviteCall(client, 'invite_remove', email),
+
     async hasRecords() {
       for (const table of ['week_versions', 'settings_versions', 'audit_entries'] as const) {
         const { data, error } = await client.from(table).select('id').limit(1)
@@ -228,4 +240,18 @@ async function insert(client: SupabaseClient, table: Table, row: Rows[Table]): P
   // 23505 is Postgres's "unique violation": that ID or version number is taken.
   if (error.code === '23505') return 'taken'
   throw new ServerError()
+}
+
+async function inviteCall(client: SupabaseClient, name: 'invite_add' | 'invite_remove', email: string): Promise<boolean> {
+  const { error } = await client.rpc(name, { p_email: email })
+  if (error === null) return true
+  if (error.code === 'P0001') return false
+  throw new ServerError()
+}
+
+function isInviteRow(value: unknown): value is InviteRow {
+  if (typeof value !== 'object' || value === null) return false
+  const row = value as Record<string, unknown>
+  return Object.keys(row).length === 3 && typeof row.email === 'string' && row.email.length <= 254
+    && typeof row.added_at === 'string' && !Number.isNaN(Date.parse(row.added_at)) && typeof row.has_account === 'boolean'
 }
