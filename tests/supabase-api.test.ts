@@ -288,3 +288,33 @@ test('the football tables: their columns and filters, and every row checked', as
     await assert.rejects(answering(body).syncStatus(), ServerError, JSON.stringify(body))
   }
 })
+
+test('the fixtures in a span: kick-off from its start up to its end, and a bad span asks for nothing', async () => {
+  const fixture = {
+    id: 900_001, competition: 'PL', season: 2026, period: 'MW11', tie_leg: null, kickoff: '2026-11-07T17:30:00+00:00',
+    home_team_id: 9001, away_team_id: 9002, status: 'live', minute: 12, home_90: 0, away_90: 0,
+    home_ht: null, away_ht: null, home_et: null, away_et: null, home_pens: null, away_pens: null,
+  }
+  const from = '2026-11-07T14:20:00.000Z'
+  const to = '2026-11-07T17:55:00.001Z'
+  const { api, requests } = harness(request => ({ status: 200, body: request.query.has('id') ? [] : [fixture] }))
+  assert.deepEqual(await api.fixturesBetween(from, to), [fixture])
+  assert.equal(requests.length, 2)
+  for (const request of requests) {
+    assert.equal(request.path, '/rest/v1/fixtures')
+    assert.deepEqual(request.query.getAll('kickoff'), [`gte.${from}`, `lt.${to}`])
+    assert.equal(request.query.get('season'), null) // every season: the app keeps its own
+    assert.equal(request.query.get('order'), 'id.asc')
+  }
+  // The second page carries on after the first page's last ID.
+  assert.equal(requests[1].query.get('id'), 'gt.900001')
+
+  // A span that isn't two times, the first before the second, never reaches the server.
+  const spans = [[to, from], [from, from], ['yesterday', to], [from, `${to}&id=gt.0`], ['', ''], [from, '2026-11-07T17:55:00+00:00']]
+  for (const [start, end] of spans) await assert.rejects(api.fixturesBetween(start, end), RangeError, `${start} to ${end}`)
+  assert.equal(requests.length, 2)
+  // Rows are checked just as the season's fixtures are.
+  const answering = (body: unknown[]) => harness(request => ({ status: 200, body: request.query.has('id') ? [] : body })).api
+  await assert.rejects(answering([{ ...fixture, status: 'IN_PLAY' }]).fixturesBetween(from, to), ServerError)
+  await assert.rejects(answering([{ ...fixture, kickoff: 'soon' }]).fixturesBetween(from, to), ServerError)
+})

@@ -1,5 +1,6 @@
 // Settings: security and backups (canvas: "Settings: security and backups"
-// and "Settings: after a key change"). The only signed-in page in step 7.
+// and "Settings: after a key change"). The signed-in frame round it is
+// SignedIn's, from step 10.
 import { useCallback, useEffect, useState } from 'react'
 import type { AccountApi, Stored, WeekRow } from '../lib/account/api.ts'
 import { backupStatus, planRestore, type Backup, type BackupStatus, type RestorePlan, type RestoreResult } from '../lib/account/backup.ts'
@@ -10,7 +11,8 @@ import { count, daysAgo, formatDay } from '../lib/format.ts'
 import { loadSettings, type SettingsRecord } from '../lib/records/settings.ts'
 import { Button, FileButton, Hint, Note } from '../components/Controls.tsx'
 import { ClockIcon, DownloadIcon, KeyIcon, UploadIcon } from '../components/Icons.tsx'
-import { AppFrame, ScreenTitle } from '../components/Layout.tsx'
+import { useAdmin } from '../components/admin.ts'
+import { PageHead } from '../components/Layout.tsx'
 import { Dialog, Toast } from '../components/Overlays.tsx'
 import { backupFileProblem, readBackupFile } from '../components/files.ts'
 import { BackupSteps } from './BackupSteps.tsx'
@@ -25,19 +27,21 @@ type Open =
   | { kind: 'restore'; fileName: string; backup: Backup; plan: RestorePlan }
   | null
 
-export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey }: {
+export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey, onWeeksChanged }: {
   api: AccountApi
   unlocked: Unlocked
   toast?: string
   onSignOut: () => void
   onNewKey: (newKey: NewRecoveryKey) => void
+  onWeeksChanged: () => void    // a restore or the demo season added weeks, so My parlays reloads
 }) {
+  const admin = useAdmin()
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [loadProblem, setLoadProblem] = useState(false)
   const [open, setOpen] = useState<Open>(null)
   const [toast, setToast] = useState<string | null>(firstToast ?? null)
   const [restoreProblem, setRestoreProblem] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'restore' | 'new-key' | 'junk' | null>(null)
+  const [busy, setBusy] = useState<'restore' | 'new-key' | 'demo' | null>(null)
 
   // What the panels show, fetched when the page opens and again after
   // anything changes it. Bumping `version` fetches it again.
@@ -91,6 +95,7 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
     const added = `Added ${count(result.added, 'saved version', 'saved versions')}.`
     setToast(result.taken === 0 ? added : `${added} ${result.taken.toLocaleString('en-GB')} skipped, because a newer one took ${result.taken === 1 ? 'its' : 'their'} place.`)
     load()
+    onWeeksChanged()
   }
 
   async function newKey() {
@@ -102,16 +107,18 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
     }
   }
 
-  async function junkWeek() {
+  async function demoSeason() {
     // Development only: Vite sets import.meta.env.DEV to false in a
     // production build, which leaves this out, and the file with it.
     if (!import.meta.env.DEV) return
-    setBusy('junk')
+    setBusy('demo')
     try {
-      const { addJunkWeek } = await import('../lib/records/junk-weeks.ts')
-      await addJunkWeek(api, unlocked.dataKey)
-      setToast('Added a junk week.')
+      const { fillDemoSeason } = await import('../lib/records/demo-season.ts')
+      const added = await fillDemoSeason(api, unlocked.dataKey)
+      setToast(added.weeks === 0 ? 'Every finished week already has parlays, so nothing was added.'
+        : `Added a demo season: ${count(added.weeks, 'week', 'weeks')} and ${count(added.parlays, 'parlay', 'parlays')}.`)
       load()
+      onWeeksChanged()
     } catch {
       setToast(null)
       setRestoreProblem(OFFLINE)
@@ -127,14 +134,9 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
   const weeks = loaded === null ? 0 : new Set(loaded.weeks.map(w => `${w.season} ${w.competition} ${w.period}`)).size
 
   return (
-    <AppFrame>
-      <div className="topbar">
-        <div>
-          <ScreenTitle>Settings</ScreenTitle>
-          <p className="status">Signed in as {unlocked.email}. Closing or refreshing this tab signs you out.</p>
-        </div>
-        <Button onClick={onSignOut}>Sign out</Button>
-      </div>
+    <>
+      <PageHead title="Settings" admin={admin} status={`Signed in as ${unlocked.email}. Closing or refreshing this tab signs you out.`}
+        right={<Button onClick={onSignOut}>Sign out</Button>} />
 
       {status !== null && status.kind !== 'fine' && <Reminder status={status} onExport={() => setOpen({ kind: 'export' })} />}
       {loadProblem && <Note problem><p>{OFFLINE}</p></Note>}
@@ -181,7 +183,7 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
             <FileButton onFile={chooseRestoreFile} busy={busy === 'restore'} busyLabel="Reading the file…"><UploadIcon />Restore from a backup</FileButton>
             {import.meta.env.DEV && (
               <>
-                <Button onClick={junkWeek} busy={busy === 'junk'} busyLabel="Adding…">Add a junk week</Button>
+                <Button onClick={demoSeason} busy={busy === 'demo'} busyLabel="Filling…">Fill with a demo season</Button>
                 <span className="dev-tag">Dev only</span>
               </>
             )}
@@ -215,7 +217,7 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
           onClose={() => setOpen(null)} onRestored={restored} onChooseAnother={chooseRestoreFile} />
       )}
       {toast !== null && <Toast message={toast} onDone={() => setToast(null)} />}
-    </AppFrame>
+    </>
   )
 }
 

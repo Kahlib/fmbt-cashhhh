@@ -29,19 +29,28 @@ export type LoadedFixtures = { fixtures: Fixture[]; teams: Map<number, Team> }
 export async function loadFixtures(api: AccountApi, season: number): Promise<LoadedFixtures> {
   const teams = new Map<number, Team>()
   for (const row of await api.teams()) teams.set(row.id, { id: row.id, name: row.name, shortName: row.short_name, code: row.code })
-  const fixtures = (await api.fixtures(season)).map(row => {
-    const home = teams.get(row.home_team_id)
-    const away = teams.get(row.away_team_id)
-    const kickoff = fromDatabaseTime(row.kickoff)
-    // The database never holds a fixture without its teams, so a missing one
-    // means the answers don't fit together.
-    if (home === undefined || away === undefined || kickoff === null || row.season !== season) throw new ServerError()
-    return {
-      ...row, kickoff, home: home.code, away: away.code,
-      competition: row.competition as Competition, status: row.status as FixtureStatus, tie_leg: row.tie_leg as 1 | 2 | null,
-    }
-  })
+  const fixtures = (await api.fixtures(season)).map(row => toFixture(row, teams, season))
   return { fixtures, teams }
+}
+
+// The season's fixtures kicking off from `from` up to, but not including,
+// `to`: the matches in their live window, for the once-a-minute refresh.
+export async function loadFixturesBetween(api: AccountApi, teams: ReadonlyMap<number, Team>, season: number, from: string, to: string): Promise<Fixture[]> {
+  // A span can reach into another season's matches, which stay out.
+  return (await api.fixturesBetween(from, to)).filter(row => row.season === season).map(row => toFixture(row, teams, season))
+}
+
+function toFixture(row: FixtureRow, teams: ReadonlyMap<number, Team>, season: number): Fixture {
+  const home = teams.get(row.home_team_id)
+  const away = teams.get(row.away_team_id)
+  const kickoff = fromDatabaseTime(row.kickoff)
+  // The database never holds a fixture without its teams, so a missing one
+  // means the answers don't fit together.
+  if (home === undefined || away === undefined || kickoff === null || row.season !== season) throw new ServerError()
+  return {
+    ...row, kickoff, home: home.code, away: away.code,
+    competition: row.competition as Competition, status: row.status as FixtureStatus, tie_leg: row.tie_leg as 1 | 2 | null,
+  }
 }
 
 // The fixtures by football-data's ID, the way settling looks them up.

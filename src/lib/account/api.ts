@@ -88,6 +88,10 @@ export interface AccountApi {
   // Football data, which only the sync function writes
   teams(): Promise<TeamRow[]>
   fixtures(season: number): Promise<FixtureRow[]>
+  // The fixtures kicking off from `from` up to, but not including, `to`,
+  // both times as toISOString() writes them. The pages ask for the matches in
+  // their live window this way every minute, rather than the whole season.
+  fixturesBetween(from: string, to: string): Promise<FixtureRow[]>
   syncStatus(): Promise<SyncStatusRow>
 }
 

@@ -8,6 +8,7 @@ import type { AuthError, SupabaseClient } from '@supabase/supabase-js'
 import { ServerError, type AccountApi, type AuthResult, type Rows, type SaveResult, type Stored, type Table } from './api.ts'
 import { columnNames, FOOTBALL_COLUMNS, isFixtureRow, isStoredRow, isSyncStatusRow, isTeamRow } from './rows.ts'
 import type { SupabaseConfig } from '../config.ts'
+import { isIsoTime } from '../records/settings.ts'
 
 // Rows come back this many at a time.
 const PAGE_SIZE = 1000
@@ -144,6 +145,11 @@ export function supabaseApi(
 
     teams: () => pagedRows(client, 'teams', FOOTBALL_COLUMNS.teams, isTeamRow),
     fixtures: season => pagedRows(client, 'fixtures', FOOTBALL_COLUMNS.fixtures, isFixtureRow, { season }),
+    fixturesBetween(from, to) {
+      // Only real times go into the query, earliest first.
+      if (!isIsoTime(from) || !isIsoTime(to) || Date.parse(from) >= Date.parse(to)) return Promise.reject(new RangeError('A span of kick-off times runs from an earlier time to a later one.'))
+      return pagedRows(client, 'fixtures', FOOTBALL_COLUMNS.fixtures, isFixtureRow, {}, { column: 'kickoff', from, to })
+    },
 
     async syncStatus() {
       const { data, error } = await client.from('sync_status').select(FOOTBALL_COLUMNS.sync_status.join(',')).limit(2)
@@ -189,15 +195,18 @@ function allRows<T extends Table>(
 // Every row of a table or view, checked, in pages ordered by ID. Each page
 // starts after the last ID of the one before, and the loop stops at an empty
 // page, so no row-limit setting on the server can cut the list short.
+// `equal` keeps rows with those values, and `span` rows whose column is from
+// its `from` up to, but not including, its `to`.
 async function pagedRows<R extends { id: string | number }>(
   client: SupabaseClient, from: string, columns: string[], check: (row: unknown) => row is R,
-  equal: Record<string, string | number> = {},
+  equal: Record<string, string | number> = {}, span?: { column: string; from: string; to: string },
 ): Promise<R[]> {
   const rows: R[] = []
   for (;;) {
     const last = rows.at(-1)
     let query = client.from(from).select(columns.join(',')).order('id').limit(PAGE_SIZE)
     for (const [column, value] of Object.entries(equal)) query = query.eq(column, value)
+    if (span !== undefined) query = query.gte(span.column, span.from).lt(span.column, span.to)
     if (last !== undefined) query = query.gt('id', last.id)
     const { data, error } = await query
     const page: unknown = data

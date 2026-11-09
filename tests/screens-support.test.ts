@@ -1,6 +1,7 @@
 // The small pieces the 7.5 screens lean on: the backup reminder, dates and
-// sizes, the settings record's shape, sign-in's first-key flag, and the
-// development-only junk weeks.
+// sizes, the settings record's shape, and sign-in's first-key flag. Step 10
+// replaced the development-only junk weeks with the demo season, which
+// tests/demo-season.test.ts covers.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { backupStatus } from '../src/lib/account/backup.ts'
@@ -10,10 +11,8 @@ import { createAccount } from '../src/lib/account/setup.ts'
 import { signInWithKeys } from '../src/lib/account/signin.ts'
 import type { KeyWrapRow } from '../src/lib/crypto/keys.ts'
 import { derivePasswordKeys } from '../src/lib/crypto/kdf.ts'
-import { decryptRecord } from '../src/lib/crypto/records.ts'
 import { count, daysAgo, formatDay, formatSize } from '../src/lib/format.ts'
-import { addJunkWeek } from '../src/lib/records/junk-weeks.ts'
-import { EMPTY_SETTINGS, isSettingsRecord, loadSettings, type SettingsRecord } from '../src/lib/records/settings.ts'
+import { EMPTY_SETTINGS, isSettingsRecord, type SettingsRecord } from '../src/lib/records/settings.ts'
 import { EMAIL, PASSWORD, setUpAccount, signedIn } from './accounts.ts'
 import { FakeServer, TabClosed } from './fake-api.ts'
 
@@ -81,18 +80,4 @@ test('Sign-in says when a recovery key would be the first one', async () => {
   await assert.rejects(replaceRecoveryKey(tab, unlocked, await makeNewRecoveryKey(), PASSWORD), TabClosed)
   const after = await signInWithKeys(server.tab(), EMAIL, keys)
   assert.ok(after.kind === 'unlocked' && after.next.step === 'save-recovery-key' && !after.next.first)
-})
-
-test('Junk weeks fill matchweeks in order and open with the data key', async () => {
-  const server = new FakeServer()
-  const account = await setUpAccount(server)
-  const { tab, unlocked } = await signedIn(server, await derivePasswordKeys(EMAIL, PASSWORD))
-  assert.equal(await addJunkWeek(tab, unlocked.dataKey), 'saved')
-  assert.equal(await addJunkWeek(tab, unlocked.dataKey), 'saved')
-  const weeks = server.rowsOf(account.id, 'week_versions')
-  // The sample from setUpAccount sits in MW1, so the junk goes in MW2 and MW3.
-  assert.deepEqual(weeks.map(w => w.period), ['MW1', 'MW2', 'MW3'])
-  const opened = await decryptRecord('week_versions', weeks[2], unlocked.dataKey)
-  assert.equal((opened as { junk?: unknown }).junk, true)
-  assert.equal((await loadSettings(tab, unlocked.dataKey)).unreadable, 0)
 })

@@ -10,6 +10,8 @@ import type { Message } from '../components/Controls.tsx'
 
 export const OFFLINE = "Couldn't reach the server. Check your connection and try again."
 export const TOO_MANY_TRIES = 'Too many tries for now. Wait a few minutes, then try again.'
+// A save found that another tab saved the same week first.
+export const TAKEN = "Another tab changed this week first. It's been reloaded, so check it and try again."
 
 export function passwordProblemText(problem: PasswordProblem, password: string): string {
   const count = countCharacters(password)

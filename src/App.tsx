@@ -1,12 +1,15 @@
 // Which screen shows, and the unlocked data key, kept in this tab's memory
 // only (fmbt-security, section 3). There's no router: a refresh signs you
-// out anyway, so the app only needs to know the screen it's on now.
+// out anyway, so the app only needs to know the screen it's on now. Once
+// you're in, SignedIn runs the pages.
 import { useEffect, useRef, useState } from 'react'
 import { api, onSessionEnded } from './lib/account/connect.ts'
 import { saveRecoveryKey } from './lib/account/new-recovery-key.ts'
 import type { NextStep } from './lib/account/signin.ts'
 import type { Unlocked } from './lib/account/wraps.ts'
 import { count } from './lib/format.ts'
+import { leaving } from './lib/leaving.ts'
+import type { Page } from './components/Layout.tsx'
 import { CheckKey } from './screens/CheckKey.tsx'
 import { CreateAccount } from './screens/CreateAccount.tsx'
 import { FirstBackup } from './screens/FirstBackup.tsx'
@@ -15,7 +18,7 @@ import { KeyPassword } from './screens/KeyPassword.tsx'
 import { OFFLINE } from './screens/messages.ts'
 import { Recover } from './screens/Recover.tsx'
 import { SaveKey } from './screens/SaveKey.tsx'
-import { Settings } from './screens/Settings.tsx'
+import { SignedIn } from './screens/SignedIn.tsx'
 import { SignIn } from './screens/SignIn.tsx'
 import { StartFromBackup } from './screens/StartFromBackup.tsx'
 
@@ -36,7 +39,7 @@ type Screen =
   | { name: 'check-key'; pending: PendingKey }
   | { name: 'key-password'; pending: PendingKey }
   | { name: 'first-backup' }
-  | { name: 'settings'; toast?: string }
+  | { name: 'app'; page: Page; toast?: string }
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>(signedOutElsewhere ? { name: 'sign-in', notice: SIGNED_OUT_NOTICE } : { name: 'sign-in' })
@@ -59,6 +62,7 @@ export default function App() {
   useEffect(() => onSessionEnded(() => {
     if (unlockedNow.current === null) return
     unlockedNow.current = null
+    leaving.onPurpose = true
     location.replace('/?signed-out')
   }), [])
 
@@ -66,21 +70,22 @@ export default function App() {
     // Forget the key first, so the session listener knows this was asked
     // for. The reload waits for Supabase, so every session really ends.
     setUnlocked(null)
+    leaving.onPurpose = true
     void api.signOut().finally(() => location.replace('/'))
   }
 
   // Where a freshly unlocked tab goes.
   function opened(next: Unlocked, step: NextStep) {
     setUnlocked(next)
-    if (step.step === 'app') setScreen({ name: 'settings' })
+    if (step.step === 'app') setScreen({ name: 'app', page: 'parlays' })
     else if (step.step === 'first-backup') setScreen({ name: 'first-backup' })
     else setScreen({ name: 'save-key', pending: { flow: step.first ? 'first-setup' : 'unfinished', newKey: step.newKey, prepared: step.prepared } })
   }
 
   function keySaved(flow: KeyFlow) {
     if (flow === 'first-setup') setScreen({ name: 'first-backup' })
-    else if (flow === 'after-recovery') setScreen({ name: 'settings', toast: 'New password and recovery key saved.' })
-    else setScreen({ name: 'settings', toast: 'New recovery key saved. The old one no longer works.' })
+    else if (flow === 'after-recovery') setScreen({ name: 'app', page: 'settings', toast: 'New password and recovery key saved.' })
+    else setScreen({ name: 'app', page: 'settings', toast: 'New recovery key saved. The old one no longer works.' })
   }
 
   // Step 3's Check button, once the three groups match.
@@ -160,13 +165,13 @@ export default function App() {
     case 'key-password':
       return (
         <KeyPassword api={api} unlocked={unlocked} pending={screen.pending} onSaved={() => keySaved(screen.pending.flow)}
-          onCancel={screen.pending.flow === 'settings' ? () => setScreen({ name: 'settings' }) : undefined} />
+          onCancel={screen.pending.flow === 'settings' ? () => setScreen({ name: 'app', page: 'settings' }) : undefined} />
       )
     case 'first-backup':
-      return <FirstBackup api={api} unlocked={unlocked} onDone={() => setScreen({ name: 'settings', toast: 'Setup is done. Your backup checked out.' })} />
-    case 'settings':
+      return <FirstBackup api={api} unlocked={unlocked} onDone={() => setScreen({ name: 'app', page: 'settings', toast: 'Setup is done. Your backup checked out.' })} />
+    case 'app':
       return (
-        <Settings api={api} unlocked={unlocked} toast={screen.toast} onSignOut={signOut}
+        <SignedIn api={api} unlocked={unlocked} firstPage={screen.page} firstToast={screen.toast} onSignOut={signOut}
           onNewKey={newKey => setScreen({ name: 'save-key', pending: { flow: 'settings', newKey, prepared: null } })} />
       )
   }

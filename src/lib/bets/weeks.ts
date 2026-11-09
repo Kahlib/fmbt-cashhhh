@@ -15,6 +15,7 @@
 import { ServerError, type AccountApi, type SaveResult, type Stored, type WeekRow } from '../account/api.ts'
 import { decryptRecord, encryptRecord, RECORD_VERSION } from '../crypto/records.ts'
 import { isIsoTime } from '../records/settings.ts'
+import { periodIndex } from '../periods.ts'
 import { capChanges, describeChanges, isAuditRecord, lockedChanges, sealAuditEntry, type AuditRecord } from './audit.ts'
 import { acceptCorrection, settleWeek, type Correction, type FixtureScore, type Waiting } from './settle.ts'
 import { EMPTY_WEEK, isReason, isWeekRecord, TOMBSTONE, type Competition, type Week, type WeekRecord } from './week-record.ts'
@@ -35,6 +36,7 @@ export type WeekWarning = { week: Week; unreadable: number }
 // parlay without Admin mode.
 export const NOTED_REASON = 'The 90-minute score was noted automatically.'
 export const CORRECTION_REASON = 'A score correction from the feed, accepted.'
+export const KEPT_REASON = 'A score correction from the feed, turned down: bet365 kept the original result.'
 
 // Every week, from each one's newest version that opens and checks out.
 // Deleted weeks stay in the list, since their version numbers are taken.
@@ -198,8 +200,5 @@ const warn = (week: Week, unreadable: number): WeekWarning | null => (unreadable
 
 // Seasons in order, the Premier League before the Champions League, and
 // periods in the order they're played.
-const PERIODS = [
-  ...Array.from({ length: 38 }, (_, i) => `MW${i + 1}`), ...Array.from({ length: 8 }, (_, i) => `MD${i + 1}`), 'KPO', 'R16', 'QF', 'SF', 'F',
-]
 const byWeek = (a: LoadedWeek, b: LoadedWeek) =>
-  a.week.season - b.week.season || a.week.competition.localeCompare(b.week.competition) || PERIODS.indexOf(a.week.period) - PERIODS.indexOf(b.week.period)
+  a.week.season - b.week.season || a.week.competition.localeCompare(b.week.competition) || periodIndex(a.week.period) - periodIndex(b.week.period)

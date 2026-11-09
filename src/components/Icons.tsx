@@ -107,15 +107,57 @@ export function SlidersIcon() {
   )
 }
 
-// The round status icons: a tick, a cross, or a dash for "nothing to do".
-export function StatusIcon({ kind }: { kind: 'good' | 'bad' | 'none' }) {
+// The round status icons: a tick, a cross, an equals sign for a leg lost to
+// a draw, or a dash for "nothing to do".
+export function StatusIcon({ kind }: { kind: 'good' | 'bad' | 'warn' | 'none' }) {
   return (
     <span className={`dot-icon ${kind}`} aria-hidden="true">
       <svg viewBox="0 0 10 10">
         {kind === 'good' && <path d="M2.5 5.2l1.8 1.8 3.4-3.6" />}
         {kind === 'bad' && <path d="M3 3l4 4M7 3l-4 4" />}
+        {kind === 'warn' && <path d="M2.8 3.9h4.4M2.8 6.1h4.4" />}
         {kind === 'none' && <path d="M3 5h4" />}
       </svg>
     </span>
+  )
+}
+
+// Step 10's icons, 16px unless the CSS says otherwise.
+export function LockIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </svg>
+  )
+}
+
+export function OpenLockIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" />
+    </svg>
+  )
+}
+
+export function BackIcon() {
+  return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5" /></svg>
+}
+
+export function NextIcon() {
+  return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5" /></svg>
+}
+
+export function CrossIcon() {
+  return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+}
+
+export function ChangedIcon() {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true">
+      <path d="M14.5 6.5A6 6 0 0 0 3.6 6M3.5 11.5A6 6 0 0 0 14.4 12" />
+      <path d="M14.8 3.2v3.5h-3.5M3.2 14.8v-3.5h3.5" />
+    </svg>
   )
 }

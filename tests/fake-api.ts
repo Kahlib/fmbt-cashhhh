@@ -356,6 +356,21 @@ export class FakeTab implements AccountApi {
     })
   }
 
+  fixturesBetween(from: string, to: string): Promise<FixtureRow[]> {
+    return this.run(() => {
+      this.me()
+      const start = Date.parse(from)
+      const end = Date.parse(to)
+      if (!(start < end)) throw new RangeError('A span of kick-off times runs from an earlier time to a later one.')
+      return structuredClone(this.server.state.football.fixtures.filter(row => {
+        const kickoff = Date.parse(row.kickoff)
+        return kickoff >= start && kickoff < end
+      }))
+    }, () => {
+      throw new ServerError()
+    })
+  }
+
   syncStatus(): Promise<SyncStatusRow> {
     return this.run(() => {
       this.me()

@@ -3,6 +3,8 @@
 // setup step bar.
 import { useEffect, useRef, type ReactNode } from 'react'
 import { ChartIcon, ClockIcon, DashboardIcon, ListIcon, SlidersIcon } from './Icons.tsx'
+import type { Admin } from './admin.ts'
+import { AdminBanner } from './AdminMode.tsx'
 
 export function Brand() {
   return (
@@ -36,32 +38,73 @@ export function OutPage({ corner, wide = false, footer, children }: {
   )
 }
 
-// The signed-in frame: the sidebar, then the page. Only Settings exists in
-// step 7, so the other pages show as not ready yet.
-export function AppFrame({ children }: { children: ReactNode }) {
+// The signed-in pages. Dashboard, History and Analytics come later in step 10.
+export type Page = 'parlays' | 'build' | 'settings'
+
+// The signed-in frame: the sidebar, then the page. With Admin mode on, the
+// banner sits at the top of the page and a light frame goes round it.
+export function AppFrame({ page, onNavigate, admin, seasonName, children }: {
+  page: Page
+  onNavigate: (page: Page) => void
+  admin: Admin
+  seasonName: string
+  children: ReactNode
+}) {
   const later = [
     { name: 'Dashboard', icon: <DashboardIcon /> },
-    { name: 'My parlays', icon: <ListIcon /> },
     { name: 'History', icon: <ClockIcon /> },
     { name: 'Analytics', icon: <ChartIcon /> },
   ]
+  const item = (to: Page, name: string, icon: ReactNode) => {
+    const on = page === to || (to === 'parlays' && page === 'build')
+    return (
+      <button type="button" className={on ? 'nav-item on' : 'nav-item'} aria-current={on ? 'page' : undefined} onClick={() => onNavigate(to)}>
+        {icon}{name}
+      </button>
+    )
+  }
   return (
-    <div className="frame">
+    <div className={admin.on ? 'frame adm' : 'frame'}>
       <aside className="side">
         <Brand />
         <nav className="nav" aria-label="Main">
-          {later.map(page => (
-            <span key={page.name} className="nav-item off" aria-disabled="true" title="Not built yet">
-              {page.icon}{page.name}
-            </span>
+          <span className="nav-item off" aria-disabled="true" title="Not built yet">{later[0].icon}{later[0].name}</span>
+          {item('parlays', 'My parlays', <ListIcon />)}
+          {later.slice(1).map(each => (
+            <span key={each.name} className="nav-item off" aria-disabled="true" title="Not built yet">{each.icon}{each.name}</span>
           ))}
-          <span className="nav-item on" aria-current="page"><SlidersIcon />Settings</span>
+          {item('settings', 'Settings', <SlidersIcon />)}
         </nav>
         <div className="side-foot">
-          <div className="season">Season 2026/27</div>
+          <div className="season">Season {seasonName}</div>
+          <button type="button" className="admin-row" role="switch" aria-checked={admin.on}
+            onClick={admin.on ? admin.turnOff : admin.turnOn}>
+            Admin mode<span className="switch" aria-hidden="true" />
+          </button>
+          <p className="attribution">Football data provided by the Football-Data.org API</p>
         </div>
       </aside>
-      <div className="main">{children}</div>
+      <div className="main">
+        {admin.on && <AdminBanner admin={admin} />}
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// A signed-in page's heading, with the Admin tag beside it while Admin mode
+// is on, the sentence under it, and what sits at its right.
+export function PageHead({ title, status, admin, right }: { title: string; status?: ReactNode; admin: Admin; right?: ReactNode }) {
+  return (
+    <div className="topbar">
+      <div>
+        <div className="title-row">
+          <ScreenTitle>{title}</ScreenTitle>
+          {admin.on && <span className="adm-tag">Admin</span>}
+        </div>
+        {status !== undefined && <p className="status">{status}</p>}
+      </div>
+      {right !== undefined && <div className="topbar-r">{right}</div>}
     </div>
   )
 }
