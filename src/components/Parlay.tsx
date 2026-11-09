@@ -87,7 +87,7 @@ export function LegResult({ state, reason }: { state: LegState; reason: string |
 
 // The score column: the 90-minute score, the running score, the kick-off,
 // or why the match didn't finish.
-function ScoreCell({ leg, fixture, state }: { leg: Leg; fixture: Fixture | undefined; state: LegState }) {
+export function ScoreCell({ leg, fixture, state }: { leg: Leg; fixture: Fixture | undefined; state: LegState }) {
   if (state.kind === 'live') {
     return <span className="score">{state.score[0]}–{state.score[1]}<LiveMinute minute={state.minute} halfTime={state.halfTime} /></span>
   }
@@ -181,7 +181,7 @@ function Payout({ view }: { view: ParlayView }) {
   return <div className="payout"><span>{label}</span>{value}<span>{note}</span></div>
 }
 
-function ParlayStatus({ view }: { view: ParlayView }) {
+export function ParlayStatus({ view }: { view: ParlayView }) {
   if (view.state === 'won') return <span className="st good"><StatusIcon kind="good" />Cashed</span>
   if (view.state === 'lost') return <span className="st bad"><StatusIcon kind="bad" />Lost</span>
   if (view.state === 'void') return <span className="st none">Void</span>

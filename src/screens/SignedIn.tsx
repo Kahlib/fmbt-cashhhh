@@ -17,12 +17,14 @@ import { AdminContext, useAdminMode } from '../components/admin.ts'
 import { AppFrame, type Page } from '../components/Layout.tsx'
 import { Toast } from '../components/Overlays.tsx'
 import { EMPTY_SLIP, slipFor, type Slip } from '../lib/bets/slip.ts'
+import { Analytics } from './Analytics.tsx'
 import { BuildParlay } from './BuildParlay.tsx'
 import { Dashboard } from './Dashboard.tsx'
+import { History } from './History.tsx'
 import { MyParlays } from './MyParlays.tsx'
 import { Settings } from './Settings.tsx'
 
-const PAGES = new Set<unknown>(['dashboard', 'parlays', 'build', 'settings'])
+const PAGES = new Set<unknown>(['dashboard', 'parlays', 'build', 'history', 'analytics', 'settings'])
 
 // The season the app shows: the one this tab opened in.
 const SEASON = seasonOf(new Date())
@@ -116,6 +118,10 @@ export function SignedIn({ api, unlocked, firstPage, firstToast, onSignOut, onNe
   let content
   if (page === 'dashboard') {
     content = <Dashboard live={live} snapshot={snapshot} api={api} unlocked={unlocked} onBuild={build} onSettings={() => go('settings')} />
+  } else if (page === 'history') {
+    content = <History live={live} snapshot={snapshot} onToast={setToast} />
+  } else if (page === 'analytics') {
+    content = <Analytics live={live} snapshot={snapshot} />
   } else if (page === 'settings') {
     content = <Settings api={api} unlocked={unlocked} toast={firstPage === 'settings' ? firstToast : undefined} onSignOut={onSignOut} onNewKey={onNewKey}
       onWeeksChanged={() => void live.loadAll()} />

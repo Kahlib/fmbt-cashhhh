@@ -27,8 +27,8 @@ import { confidenceSentence, heroSentence, KIND_NAMES, kindsSentence, legsSenten
 
 type Filter = Competition | 'all'
 
-// A sentence from words.ts: bold parts in their tone.
-function Say({ sentence }: { sentence: Sentence }) {
+// A sentence from words.ts: bold parts in their tone. Analytics uses it too.
+export function Say({ sentence }: { sentence: Sentence }) {
   if (sentence.length === 0) return null
   return (
     <p className="say">

@@ -574,3 +574,59 @@ svg.prog { display: block; margin-top: 6px; }
   .group { background: #fff; border-color: #000; }
   .group-n, .group-v { color: #000; }
 }
+
+/* ----- step 10.4: History and Analytics (the canvas "FMBT History and Analytics screens") ----- */
+
+/* the view switch, the filters, and how many rows are showing */
+.hist-bar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 18px; }
+.segmented .n { margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.filters { display: flex; flex-wrap: wrap; gap: 10px; }
+.filter { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.filter.on { color: var(--you-t); }
+.fsel { position: relative; display: inline-flex; }
+.fsel select { appearance: none; min-width: 116px; padding: 6px 28px 6px 10px; font: inherit; font-size: 13px; font-weight: 550; color: var(--text); background: rgba(0,0,0,.35); border: 1px solid var(--hair-2); border-radius: var(--r-box); cursor: pointer; }
+.fsel select:focus-visible { outline: 2px solid var(--you-t); outline-offset: 1px; }
+.filter.on .fsel select { border-color: var(--you-t); }
+.fsel svg { position: absolute; top: 50%; right: 9px; margin-top: -6px; stroke: var(--text-3); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.shown { display: flex; align-items: center; gap: 12px; margin-left: auto; padding-bottom: 7px; font-size: 13px; color: var(--text-2); }
+
+/* History's tables, and the club ledger. Every heading is a button that sorts by it. */
+.table-box { overflow-x: auto; }
+table.hist { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.hist th { padding: 0 12px 8px 0; text-align: left; font-weight: 550; white-space: nowrap; border-bottom: 1px solid var(--hair); }
+table.hist th button { display: inline-flex; align-items: center; gap: 4px; padding: 0; font: inherit; font-size: 12px; font-weight: 550; color: var(--text-3); background: none; border: 0; cursor: pointer; }
+table.hist th button:hover, table.hist th.sorted button { color: var(--text); }
+table.hist th button:focus-visible { outline: 2px solid var(--you-t); outline-offset: 2px; border-radius: 2px; }
+table.hist th svg { stroke: currentColor; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+table.hist td { padding: 9px 12px 9px 0; white-space: nowrap; vertical-align: middle; border-bottom: 1px solid var(--hair); }
+table.hist .r { text-align: right; }
+table.hist th:last-child, table.hist td:last-child { padding-right: 0; }
+table.hist tfoot td { padding-top: 12px; font-weight: 650; border-bottom: 0; }
+table.hist tfoot td:first-child { font-weight: 550; color: var(--text-2); }
+table.hist .strong { font-weight: 700; }
+.badges { display: inline-flex; align-items: center; gap: 4px; }
+.kind { color: var(--text-2); }
+
+/* Analytics: parlays against singles */
+.pvs { display: flex; flex-direction: column; gap: 14px; }
+.pvs-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 84px; align-items: center; gap: 14px; }
+.pvs-bars { min-width: 0; }
+.pvs-bars svg { display: block; }
+.pvs-bars .you { fill: var(--you); }
+.pvs-bars .alt { fill: rgba(255,255,255,.22); }
+.pvs-vals { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.sw-alt { width: 14px; height: 8px; border-radius: 2px; background: rgba(255,255,255,.22); }
+
+/* Analytics: moments */
+.moments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.moment { display: flex; flex-direction: column; gap: 4px; padding: 14px; background: var(--tile); border-radius: var(--r-box); }
+.moment .stat-note { line-height: 1.45; }
+
+/* Analytics: the club ledger */
+table.ledger th.side-h { padding: 0 12px 6px 0; font-size: 12px; font-weight: 650; color: var(--text-2); border-bottom: 1px solid var(--hair-2); }
+table.ledger td.blank { border-bottom: 0; }
+table.ledger .split { padding-left: 18px; border-left: 1px solid var(--hair); }
+table.ledger tr.club-group th { padding: 18px 0 6px; font-size: 12px; font-weight: 650; color: var(--text-2); }
+table.ledger tr.none td, table.ledger tr.none .club { color: var(--text-3); }
+table.ledger tr.none .bd { opacity: .45; }
+table.ledger td.none-side { font-size: 12px; color: var(--text-3); }

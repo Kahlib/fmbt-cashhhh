@@ -38,8 +38,8 @@ export function OutPage({ corner, wide = false, footer, children }: {
   )
 }
 
-// The signed-in pages. History and Analytics come in 10.4.
-export type Page = 'dashboard' | 'parlays' | 'build' | 'settings'
+// The signed-in pages.
+export type Page = 'dashboard' | 'parlays' | 'build' | 'history' | 'analytics' | 'settings'
 
 // The signed-in frame: the sidebar, then the page. With Admin mode on, the
 // banner sits at the top of the page and a light frame goes round it.
@@ -50,10 +50,6 @@ export function AppFrame({ page, onNavigate, admin, seasonName, children }: {
   seasonName: string
   children: ReactNode
 }) {
-  const later = [
-    { name: 'History', icon: <ClockIcon /> },
-    { name: 'Analytics', icon: <ChartIcon /> },
-  ]
   const item = (to: Page, name: string, icon: ReactNode) => {
     const on = page === to || (to === 'parlays' && page === 'build')
     return (
@@ -69,9 +65,8 @@ export function AppFrame({ page, onNavigate, admin, seasonName, children }: {
         <nav className="nav" aria-label="Main">
           {item('dashboard', 'Dashboard', <DashboardIcon />)}
           {item('parlays', 'My parlays', <ListIcon />)}
-          {later.map(each => (
-            <span key={each.name} className="nav-item off" aria-disabled="true" title="Not built yet">{each.icon}{each.name}</span>
-          ))}
+          {item('history', 'History', <ClockIcon />)}
+          {item('analytics', 'Analytics', <ChartIcon />)}
           {item('settings', 'Settings', <SlidersIcon />)}
         </nav>
         <div className="side-foot">

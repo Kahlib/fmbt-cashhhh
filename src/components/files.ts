@@ -2,9 +2,10 @@
 // stay in this tab: nothing is uploaded anywhere.
 import { MAX_BACKUP_CHARACTERS, readBackup, type ReadBackupResult } from '../lib/account/backup.ts'
 
-// Starts a download of `text`, and returns its size in bytes.
-export function downloadText(fileName: string, text: string): number {
-  const blob = new Blob([text], { type: 'application/json' })
+// Starts a download of `text`, and returns its size in bytes. Backups are
+// JSON, and History's export is CSV.
+export function downloadText(fileName: string, text: string, type = 'application/json'): number {
+  const blob = new Blob([text], { type })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

@@ -1,9 +1,10 @@
-// The Dashboard's sentences: what each panel shows, in words, worked out
-// from the numbers (fmbt-design-system, "Panel contents"). Each sentence is
-// a list of parts, and a part with `b` is shown in bold, in its tone.
-import { money, pointsText, signedMoney, wholePercent } from '../format.ts'
+// The Dashboard's and Analytics' sentences: what each panel shows, in words,
+// worked out from the numbers (fmbt-design-system, "Panel contents"). Each
+// sentence is a list of parts, and a part with `b` is shown in bold, in its tone.
+import { count, money, pointsText, signedMoney, wholePercent } from '../format.ts'
 import { periodName } from '../periods.ts'
-import type { ConfidenceRow, KindRow, PickKind, SeasonStats, SizeRow } from './season.ts'
+import type { ParlayResult, PickResult } from './history.ts'
+import type { ConfidenceRow, KindRow, LedgerRow, Moments, ParlayRef, PickKind, SeasonStats, SizeRow, Versus } from './season.ts'
 
 export type Tone = 'good' | 'bad' | 'warn' | 'you' | 'odds'
 export type Part = string | { b: string; tone?: Tone }
@@ -15,6 +16,16 @@ export const KIND_NAMES = new Map<PickKind, string>([
   ['home-fav', 'Home favourites'], ['away-fav', 'Away favourites'], ['away-dog', 'Away underdogs'],
   ['home-dog', 'Home underdogs'], ['draw', 'Draws'],
 ])
+
+// One pick's type, as History's Type column and filter name it.
+export const KIND_NAME = new Map<PickKind, string>([
+  ['home-fav', 'Home favourite'], ['away-fav', 'Away favourite'], ['away-dog', 'Away underdog'],
+  ['home-dog', 'Home underdog'], ['draw', 'Draw'],
+])
+
+// History's results in words, for its Result filters and the CSV.
+export const PARLAY_RESULT_WORDS: Record<ParlayResult, string> = { open: 'Still to settle', cashed: 'Cashed', lost: 'Lost', void: 'Void' }
+export const PICK_RESULT_WORDS: Record<PickResult, string> = { open: 'Still to settle', won: 'Won', drawn: 'Lost to a draw', lost: 'Lost', dropped: 'Dropped' }
 
 // "Singles" or "3-leg parlays".
 export const sizeName = (legs: number) => (legs === 1 ? 'Singles' : `${legs}-leg parlays`)
@@ -88,4 +99,65 @@ export function confidenceSentence(rows: readonly ConfidenceRow[]): Sentence {
     parts.push('.')
   }
   return parts
+}
+
+// ----- Analytics -----
+
+// Under parlays against singles: the sizes where parlays are ahead, and the
+// ones where the same picks as singles would have done better.
+export function versusSentence(versus: Versus): Sentence {
+  if (versus.count === 0) return []
+  const multi = versus.sizes.filter(row => row.legs > 1)
+  if (multi.length === 0) return ['Only singles so far, and a single is the same bet either way.']
+  const gap = (row: (typeof multi)[number]) => row.parlayCents - row.singlesCents
+  const ahead = multi.filter(row => gap(row) > 0)
+  const behind = multi.filter(row => gap(row) < 0)
+  const sizes = (rows: typeof multi) => `${listed(rows.map(row => String(row.legs)))} legs`
+  const amounts = (rows: typeof multi, tone: Tone): Sentence =>
+    rows.flatMap((row, i) => [...(i === 0 ? [] : [i === rows.length - 1 ? ' and ' : ', ']), { b: money(Math.abs(gap(row))), tone }])
+  const parts: Sentence = []
+  if (ahead.length > 0) parts.push(`Parlays are ahead at ${sizes(ahead)}, by `, ...amounts(ahead, 'good'), '.')
+  if (behind.length > 0) parts.push(`${parts.length > 0 ? ' ' : ''}The same picks as singles would have done better at ${sizes(behind)}, by `, ...amounts(behind, 'bad'), '.')
+  if (parts.length === 0) parts.push('Parlays and singles are level at every size.')
+  if (versus.sizes.some(row => row.legs === 1)) parts.push(' A single is the same bet either way.')
+  return parts
+}
+
+// Under the club ledger: of the clubs you've backed 3 or more times, the one
+// that beats the odds by the most, and the one that falls furthest short.
+export function ledgerSentence(rows: readonly LedgerRow[], name: (code: string) => string): Sentence {
+  const edge = (row: LedgerRow) => row.backing.you - row.backing.odds
+  const enough = rows.filter(row => row.backing.n >= 3)
+  if (enough.length === 0) return []
+  const best = [...enough].sort((a, b) => edge(b) - edge(a) || a.code.localeCompare(b.code))[0]
+  const weak = [...enough].sort((a, b) => edge(a) - edge(b) || a.code.localeCompare(b.code))[0]
+  const parts: Sentence = []
+  if (edge(best) > 0) {
+    parts.push(`${name(best.code)} are your most reliable club: `, { b: `${best.backing.won} of ${best.backing.n}`, tone: 'you' },
+      ' landed, where the odds said ', { b: wholePercent(best.backing.odds), tone: 'odds' }, '.')
+  }
+  if (edge(weak) < 0) parts.push(`${parts.length > 0 ? ' ' : ''}${name(weak.code)} are the weak spot, ${weak.backing.won} of ${weak.backing.n} against ${wholePercent(weak.backing.odds)}.`)
+  return parts
+}
+
+// The line under each of the Moments numbers.
+export function momentNotes(moments: Moments, name: (code: string) => string): { perfect: string; heartbreak: string; draws: string; promos: string } {
+  const none = 'None yet.'
+  const parlayName = (ref: ParlayRef) => `${periodName(ref.week.period)}'s parlay ${ref.number}`
+  const perfect = moments.perfectWeeks
+  const latest = perfect[perfect.length - 1]
+  const biggest = [...moments.heartbreakers].sort((a, b) => b.wouldCents - a.wouldCents)[0]
+  const kills = moments.drawKills
+  const killed = kills.reduce((sum, each) => sum + each.n, 0)
+  let draws = none
+  if (kills.length === 1) draws = killed === 1 ? `On ${name(kills[0].code)}.` : killed === 2 ? `Both on ${name(kills[0].code)}.` : `All ${killed} on ${name(kills[0].code)}.`
+  else if (kills.length > 1) draws = kills[0].n === kills[1].n ? `Across ${kills.length} clubs.` : `${name(kills[0].code)} the most, ${kills[0].n} of ${killed}.`
+  return {
+    perfect: latest === undefined ? none : perfect.length === 1 ? `${periodName(latest.period)}, when every parlay cashed.` : `The latest was ${periodName(latest.period)}.`,
+    heartbreak: biggest === undefined ? none
+      : moments.heartbreakers.length === 1 ? `${parlayName(biggest)} would have paid ${money(biggest.wouldCents)}.`
+        : `The biggest, ${parlayName(biggest)}, would have paid ${money(biggest.wouldCents)}.`,
+    draws,
+    promos: moments.promos.length === 0 ? none : `From ${count(moments.promos.length, 'parlay', 'parlays')}.`,
+  }
 }

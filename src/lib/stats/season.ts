@@ -1,4 +1,4 @@
-// Every number on the Dashboard, worked out in the browser from your
+// Every number on the Dashboard and Analytics, worked out in the browser from your
 // records (step 10 plan, "How the stats are worked out"). Nothing here
 // fetches or saves anything, so the page only ever draws what these say.
 //
@@ -83,8 +83,8 @@ type Played = { week: Week; parlay: Placed; leg: Leg; place: number; result: Res
 const weekName = (week: Week) => `${week.competition} ${week.period}`
 
 // The weeks in the order they were played, by their first kick-off, so
-// Matchday 1 sits between the matchweeks around it.
-function inOrder(weeks: readonly SeasonWeek[]): SeasonWeek[] {
+// Matchday 1 sits between the matchweeks around it. History uses it too.
+export function inOrder(weeks: readonly SeasonWeek[]): SeasonWeek[] {
   const first = new Map(weeks.map(each => [weekName(each.week), firstKickoff(each.record)]))
   return [...weeks].sort((a, b) => (first.get(weekName(a.week)) ?? '').localeCompare(first.get(weekName(b.week)) ?? '')
     || a.week.competition.localeCompare(b.week.competition) || periodIndex(a.week.period) - periodIndex(b.week.period))
@@ -301,5 +301,116 @@ export function achievements(weeks: readonly SeasonWeek[], plClubs: number): Ach
     europeanNight: european,
     drawsLanded: draws,
     longest,
+  }
+}
+
+// ----- Analytics (step 10 plan, 10.4): the numbers only that page shows -----
+
+// Parlays against singles (decision 5), by how many legs they were placed with.
+export type VersusRow = { legs: number; count: number; parlayCents: number; singlesCents: number }
+export type Versus = VersusRow & { sizes: VersusRow[] }  // `legs` is every pick in them
+
+// One side of a club's ledger: picking it to win (backing), or picking the
+// team it plays (fading). Draw picks count for neither.
+export type LedgerSide = RateRow & { drawn: number; lost: number }
+export type LedgerRow = { code: string; competitions: Competition[]; backing: LedgerSide; fading: LedgerSide }
+
+// A parlay as My parlays names it: its week and its place in that week.
+export type ParlayRef = { week: Week; number: number }
+
+export type Moments = {
+  perfectWeeks: Week[]                                   // every parlay that isn't void cashed, in the order played
+  heartbreakers: (ParlayRef & { wouldCents: number })[]  // lost on one leg, with every other leg won
+  drawKills: { code: string; n: number }[]               // legs lost to a draw, by the club picked, most first
+  promos: (ParlayRef & { payoutCents: number })[]        // cashed only because a promo paid a leg
+}
+
+export type Analytics = { versus: Versus; moments: Moments; ledger: LedgerRow[] }
+
+// What a parlay's picks would have made as singles, each with an equal share
+// of its stake. A single is the same bet, so it keeps its own result, boost
+// and all. A dropped leg's single would have been void, so it makes nothing.
+export function singlesCents(parlay: Parlay, profitCents: number): number {
+  if (parlay.legs.length === 1) return profitCents
+  const share = parlay.stakeCents / parlay.legs.length
+  let total = 0
+  for (const leg of parlay.legs) {
+    if (leg.settlement?.outcome === 'won') total += share * (decimalOdds(leg.odds) - 1)
+    else if (leg.settlement?.outcome === 'lost') total -= share
+  }
+  return Math.round(total)
+}
+
+const side = (rows: { result: Result; chance: number }[]): LedgerSide => ({
+  ...rate(rows),
+  drawn: rows.filter(each => each.result === 'drawn').length,
+  lost: rows.filter(each => each.result === 'lost').length,
+})
+
+// Analytics' numbers for one competition, or both. Parlays against singles
+// waits until every leg of a parlay has settled, since a parlay can lose
+// while its other legs are still to play, and their singles would not be
+// settled yet. A void parlay counts for nothing, as everywhere else.
+export function analytics(weeks: readonly SeasonWeek[], competition: Competition | 'all'): Analytics {
+  const ours = inOrder(weeks.filter(each => competition === 'all' || each.week.competition === competition))
+  const sizes = new Map<number, VersusRow>()
+  const total: VersusRow = { legs: 0, count: 0, parlayCents: 0, singlesCents: 0 }
+  const moments: Moments = { perfectWeeks: [], heartbreakers: [], drawKills: [], promos: [] }
+  const kills = new Map<string, number>()
+  const clubs = new Map<string, { back: { result: Result; chance: number }[]; fade: { result: Result; chance: number }[]; competitions: Set<Competition> }>()
+  const club = (code: string) => {
+    const found = clubs.get(code) ?? { back: [], fade: [], competitions: new Set<Competition>() }
+    clubs.set(code, found)
+    return found
+  }
+
+  for (const { week, record } of ours) {
+    const these = record.parlays.map(parlay => placed(week, parlay))
+    const counted = these.filter(each => each.counts)
+    if (counted.length > 0 && these.every(each => each.settled) && counted.every(each => each.cashed)) moments.perfectWeeks.push(week)
+
+    these.forEach((each, index) => {
+      const ref = { week, number: index + 1 }
+      const legs = each.parlay.legs
+      if (each.counts && legs.every(leg => leg.settlement !== null)) {
+        const singles = singlesCents(each.parlay, each.profitCents)
+        const row = sizes.get(legs.length) ?? { legs: legs.length, count: 0, parlayCents: 0, singlesCents: 0 }
+        sizes.set(legs.length, row)
+        for (const sum of [row, total]) {
+          sum.count += 1
+          sum.parlayCents += each.profitCents
+          sum.singlesCents += singles
+        }
+        total.legs += legs.length
+      }
+      // A heartbreaker needs another leg that won: a single, or a parlay with
+      // only one leg left after a drop, just lost.
+      const results = legs.filter(leg => leg.settlement?.outcome !== 'dropped').map(legResult)
+      if (each.counts && !each.cashed && results.length > 1 && results.filter(result => result !== 'won').length === 1) {
+        moments.heartbreakers.push({ ...ref, wouldCents: each.payoutCents })
+      }
+      // A promo that paid a leg the score says lost, or before there was a score.
+      if (each.cashed && legs.some(leg => leg.settlement?.outcome === 'won' && leg.settlement.promo && leg.settlement.byScore !== 'won')) {
+        moments.promos.push({ ...ref, payoutCents: each.parlay.stakeCents + each.profitCents })
+      }
+      for (const leg of legs) {
+        const result = legResult(leg)
+        if (result === null || leg.pick === 'D') continue
+        const [backed, faded] = leg.pick === 'H' ? [leg.home, leg.away] : [leg.away, leg.home]
+        if (result === 'drawn') kills.set(backed, (kills.get(backed) ?? 0) + 1)
+        const chance = fairChance(leg.odds)
+        club(backed).back.push({ result, chance })
+        club(faded).fade.push({ result, chance })
+        club(backed).competitions.add(week.competition)
+        club(faded).competitions.add(week.competition)
+      }
+    })
+  }
+
+  return {
+    versus: { ...total, sizes: [...sizes.values()].sort((a, b) => a.legs - b.legs) },
+    moments: { ...moments, drawKills: [...kills].map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n || a.code.localeCompare(b.code)) },
+    ledger: [...clubs].map(([code, each]) => ({ code, competitions: [...each.competitions].sort(), backing: side(each.back), fading: side(each.fade) }))
+      .sort((a, b) => a.code.localeCompare(b.code)),
   }
 }

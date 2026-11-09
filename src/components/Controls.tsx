@@ -170,3 +170,25 @@ export function FileButton({ kind = 'secondary', block = false, busy = false, bu
     </>
   )
 }
+
+// A table heading that sorts by its column: select it to sort, and again to
+// reverse. aria-sort tells a screen reader which way the table is sorted.
+export function SortHeading<K extends string>({ label, column, sort, onSort, right = false, className }: {
+  label: string
+  column: K
+  sort: { key: K; down: boolean }
+  onSort: (column: K) => void
+  right?: boolean
+  className?: string
+}) {
+  const on = sort.key === column
+  const classes = [right ? 'r' : '', on ? 'sorted' : '', className ?? ''].filter(Boolean).join(' ')
+  return (
+    <th className={classes === '' ? undefined : classes} aria-sort={on ? (sort.down ? 'descending' : 'ascending') : undefined}>
+      <button type="button" onClick={() => onSort(column)}>
+        {label}
+        {on && <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true"><path d={sort.down ? 'M3 4.5 6 7.5 9 4.5' : 'M3 7.5 6 4.5 9 7.5'} /></svg>}
+      </button>
+    </th>
+  )
+}
