@@ -77,7 +77,7 @@ export default function App() {
   // Where a freshly unlocked tab goes.
   function opened(next: Unlocked, step: NextStep) {
     setUnlocked(next)
-    if (step.step === 'app') setScreen({ name: 'app', page: 'parlays' })
+    if (step.step === 'app') setScreen({ name: 'app', page: 'dashboard' })
     else if (step.step === 'first-backup') setScreen({ name: 'first-backup' })
     else setScreen({ name: 'save-key', pending: { flow: step.first ? 'first-setup' : 'unfinished', newKey: step.newKey, prepared: step.prepared } })
   }

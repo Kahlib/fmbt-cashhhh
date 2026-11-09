@@ -103,3 +103,28 @@ export function timeAgo(iso: string, now: number): string {
   if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`
   return `on ${formatDay(iso)}`
 }
+
+// Rates and returns on the Dashboard (step 10.3).
+
+// A rate as a whole percent: .563 is "56%".
+export function wholePercent(rate: number): string {
+  return `${Math.round(rate * 100)}%`
+}
+
+// A difference in percentage points: "+6 pts", "−3 pts" or "0 pts".
+export function pointsText(difference: number): string {
+  const points = Math.round(difference * 100)
+  return `${points > 0 ? '+' : points < 0 ? MINUS : ''}${Math.abs(points)} pts`
+}
+
+// Return on stake, to one decimal: "+12.5%" or "−8.9%".
+export function returnText(rate: number): string {
+  const tenths = Math.round(rate * 1000)
+  return `${tenths > 0 ? '+' : tenths < 0 ? MINUS : ''}${(Math.abs(tenths) / 10).toFixed(1)}%`
+}
+
+// A whole-dollar axis label: "+$200", "−$50" or "$0".
+export function axisDollars(dollars: number): string {
+  if (dollars === 0) return '$0'
+  return `${dollars > 0 ? '+' : MINUS}$${Math.abs(dollars).toLocaleString('en-US')}`
+}

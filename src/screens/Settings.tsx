@@ -10,7 +10,8 @@ import { newestFirst, type Unlocked } from '../lib/account/wraps.ts'
 import { count, daysAgo, formatDay } from '../lib/format.ts'
 import { loadSettings, type SettingsRecord } from '../lib/records/settings.ts'
 import { Button, FileButton, Hint, Note } from '../components/Controls.tsx'
-import { ClockIcon, DownloadIcon, KeyIcon, UploadIcon } from '../components/Icons.tsx'
+import { DownloadIcon, UploadIcon } from '../components/Icons.tsx'
+import { Reminder } from '../components/Reminder.tsx'
 import { useAdmin } from '../components/admin.ts'
 import { PageHead } from '../components/Layout.tsx'
 import { Dialog, Toast } from '../components/Overlays.tsx'
@@ -138,7 +139,7 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
       <PageHead title="Settings" admin={admin} status={`Signed in as ${unlocked.email}. Closing or refreshing this tab signs you out.`}
         right={<Button onClick={onSignOut}>Sign out</Button>} />
 
-      {status !== null && status.kind !== 'fine' && <Reminder status={status} onExport={() => setOpen({ kind: 'export' })} />}
+      {status !== null && status.kind !== 'fine' && <Reminder status={status} action="Export backup" onAction={() => setOpen({ kind: 'export' })} />}
       {loadProblem && <Note problem><p>{OFFLINE}</p></Note>}
 
       <div className="grid">
@@ -218,30 +219,5 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
       )}
       {toast !== null && <Toast message={toast} onDone={() => setToast(null)} />}
     </>
-  )
-}
-
-// The banner at the top: a changed password or key first, then an old backup.
-function Reminder({ status, onExport }: { status: Exclude<BackupStatus, { kind: 'fine' }>; onExport: () => void }) {
-  let text
-  if (status.kind === 'keys-changed') {
-    text = status.password && status.recovery
-      ? <><b>Your password and recovery key have changed since your last backup.</b> Take a fresh backup, then delete older ones: they still open with the old ones.</>
-      : status.password
-        ? <><b>Your password has changed since your last backup.</b> Take a fresh backup, then delete older ones: they still open with your old password.</>
-        : <><b>Your recovery key has changed since your last backup.</b> Take a fresh backup, then delete older ones: they still open with your old recovery key.</>
-  } else {
-    text = status.days === null
-      ? <><b>No backup has been checked yet.</b> Export one, so you can restore everything if something goes wrong.</>
-      : <><b>Your last backup was {status.days} days ago.</b> Export a new one, so you can restore everything if something goes wrong.</>
-  }
-  return (
-    <div className="reminder" role="status">
-      <div className="reminder-text">
-        {status.kind === 'keys-changed' ? <KeyIcon /> : <ClockIcon />}
-        <span>{text}</span>
-      </div>
-      <Button kind="primary" onClick={onExport}>Export backup</Button>
-    </div>
   )
 }

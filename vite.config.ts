@@ -27,8 +27,9 @@ export default defineConfig(({ command, mode, isPreview }) => {
       // Vite warns when one file passes 500 kB. The app's one file is mostly
       // React and Supabase's library, and both are needed as soon as the
       // page opens, so splitting them out wouldn't let anything load later.
-      // The higher limit still warns if the file grows by much more.
-      chunkSizeWarningLimit: 600,
+      // The Dashboard took it past 600 kB in step 10.3, and it opens at
+      // sign-in too. The higher limit still warns if the file grows by much more.
+      chunkSizeWarningLimit: 700,
     },
   }
 })
