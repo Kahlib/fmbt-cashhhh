@@ -15,7 +15,10 @@
 // what bet365 does with it:
 //   1. multiplies the legs' prices exactly
 //   2. adds any boost, which is a percent of the profit
-//   3. rounds the return down to the cent, once, at the end
+//   3. rounds to the cent the way bet365's slips do. A single's return rounds
+//      down, once, at the end. A parlay's return rounds up, and then its
+//      boost, worked out on that rounded return, rounds up too. KMan's won
+//      slips showed the parlay rule on 9 November 2026 (step 11 plan, 11.2).
 //
 // Money never goes near floating point here. Every price stays an exact
 // fraction of whole numbers, multiplied with BigInt, JavaScript's whole
@@ -142,17 +145,36 @@ function checkBet(stakeCents: number, boostBps: number): void {
   if (!isBoostBps(boostBps)) throw new RangeError('A boost must be from 0% to 100%, in hundredths of a percent.')
 }
 
+// a ÷ b rounded up, for whole numbers of 0 or more. BigInt division rounds down.
+const divideUp = (a: bigint, b: bigint): bigint => (a + b - 1n) / b
+
+// A parlay of two or more won legs, rounded the way bet365's slips round
+// one: the stake times every leg's decimal odds, up to the cent, then the
+// boost, its percent of that return's profit, up to the cent too. All four
+// of KMan's won parlays from the backfill fit this to the cent.
+function parlayParts(stakeCents: number, wonOdds: readonly number[], boostBps: number): { returned: bigint; boost: bigint } {
+  const { top, bottom } = multiplied(wonOdds)
+  const stake = BigInt(stakeCents)
+  const returned = divideUp(stake * top, bottom)
+  return { returned, boost: divideUp(BigInt(boostBps) * (returned - stake), 10_000n) }
+}
+
 // The exact payout as a BigInt, before any limit: the stake times each won
-// leg's decimal odds, plus the boost, which is a percent of the profit,
-// rounded down to the cent once, at the end, as bet365 rounds. With no won
-// legs, as when every leg is dropped, it's the stake back.
+// leg's decimal odds, plus the boost, which is a percent of the profit. A
+// parlay rounds as parlayParts says. A single, one won leg, rounds down to
+// the cent once, at the end. With no won legs, as when every leg is
+// dropped, it's the stake back.
 export function exactPayoutCents(stakeCents: number, wonOdds: readonly number[], boostBps = 0): bigint {
   checkBet(stakeCents, boostBps)
+  if (wonOdds.length >= 2) {
+    const { returned, boost } = parlayParts(stakeCents, wonOdds, boostBps)
+    return returned + boost
+  }
   const { top, bottom } = multiplied(wonOdds)
   // The stake times top/bottom, plus boostBps/10,000 of the profit, which is
   // the stake times (top - bottom)/bottom. Put over one bottom:
   //   stake × (10,000 × top + boostBps × (top - bottom)) ÷ (10,000 × bottom)
-  // BigInt division rounds down, which is how bet365 rounds a return.
+  // BigInt division rounds down, which is how bet365 rounds a single.
   return (BigInt(stakeCents) * (10_000n * top + BigInt(boostBps) * (top - bottom))) / (10_000n * bottom)
 }
 
@@ -164,10 +186,12 @@ export function payoutCents(stakeCents: number, wonOdds: readonly number[], boos
   return Number(cents)
 }
 
-// How much of a payout the boost is, rounded down to the cent, the way
-// bet365's slip shows it. It's for showing: payoutCents already includes it.
+// How much of a payout the boost is, rounded the way bet365's slip shows
+// it: up for a parlay, down for a single. It's for showing: payoutCents
+// already includes it.
 export function boostCents(stakeCents: number, wonOdds: readonly number[], boostBps: number): number {
   checkBet(stakeCents, boostBps)
+  if (wonOdds.length >= 2) return Number(parlayParts(stakeCents, wonOdds, boostBps).boost)
   const { top, bottom } = multiplied(wonOdds)
   return Number((BigInt(stakeCents) * BigInt(boostBps) * (top - bottom)) / (10_000n * bottom))
 }

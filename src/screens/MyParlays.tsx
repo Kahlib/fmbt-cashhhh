@@ -20,6 +20,7 @@ import { dayRange, money, signedMoney, timeAgo } from '../lib/format.ts'
 import { editable, periodsOf, syncBehind, weekKey, weekToOpen, type LiveData, type LiveSnapshot } from '../lib/live.ts'
 import { periodName } from '../lib/periods.ts'
 import { CorrectionDialog, ReasonDialog, WaitingDialog, type Answer, type WaitingChoice } from './LegDialogs.tsx'
+import { betsText } from '../lib/stats/words.ts'
 import { OFFLINE, TAKEN } from './messages.ts'
 
 type Open =
@@ -249,7 +250,7 @@ export function MyParlays({ live, snapshot, competition, onCompetition, period, 
           </div>
           {summary.parlays > 0 ? (
             <div className="stats">
-              <div><div className="stat-label">Staked</div><div className="stat-value">{money(summary.stakedCents)}</div><div className="stat-note">On {summary.parlays === 1 ? '1 parlay' : `${summary.parlays} parlays`}</div></div>
+              <div><div className="stat-label">Staked</div><div className="stat-value">{money(summary.stakedCents)}</div><div className="stat-note">On {betsText(summary.parlays - summary.bonusBets, summary.bonusBets)}</div></div>
               <div><div className="stat-label">Returned so far</div><div className="stat-value">{money(summary.returnedCents)}</div><div className="stat-note">{summary.cashed === 1 ? '1 parlay cashed' : `${summary.cashed} parlays cashed`}</div></div>
               <div>
                 <div className="stat-label">Net so far</div>

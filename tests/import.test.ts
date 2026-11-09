@@ -1,8 +1,8 @@
 // Tests for step 11.1: the import's CSV reader (src/lib/import/csv-reader.ts)
 // and its plan (src/lib/import/plan.ts). The teams, fixtures and files are
-// made up by hand. Only the cent-apart parlay uses real numbers: the odds,
-// stake, boost and return of KMan's own bet365 slip, which say $81.26 where
-// the app works out $81.25 (claude/fmbt-step11-plan.md, decision 3).
+// made up by hand. Only one parlay uses real numbers: the odds, stake, boost
+// and return of KMan's own bet365 slip, $81.26, which the app matches to the
+// cent since step 11.2 rounds a parlay the way bet365 does.
 process.env.TZ = 'America/Toronto' // the Date column is a date in this computer's time
 
 import assert from 'node:assert/strict'
@@ -129,10 +129,14 @@ test('a good file: each week built and settled the way the slips say, newest fir
   assert.deepEqual(parlayOutcome(mw3.parlays[0]).state, 'lost')
   assert.deepEqual(mw3.parlays[0].legs.map(leg => [leg.settlement?.outcome, leg.settlement?.how, leg.confidence]), [['lost', 'auto', 4], ['won', 'auto', 5], ['won', 'auto', 3]])
   assert.deepEqual(planned.weeks[2].parlays[0].legs.map(leg => leg.shown), ['lost', 'won', 'won'])
-  // The slip's cent: $81.26 there, $81.25 here, noted and still ready.
-  assert.deepEqual(parlayOutcome(md1.parlays[0]), { state: 'won', payoutCents: 8125, profitCents: 5625 })
+  // KMan's slip, to the cent.
+  assert.deepEqual(parlayOutcome(md1.parlays[0]), { state: 'won', payoutCents: 8126, profitCents: 5626 })
   assert.equal(md1.parlays[0].boostBps, 500)
-  assert.equal(planned.weeks[0].parlays[0].note, 'The slip says $81.26, 1 cent more. $81.25 is saved.')
+  assert.equal(planned.weeks[0].parlays[0].note, null)
+  // A slip a cent away is noted, the app's figure is kept, and the week is still ready.
+  const cent = plan(file(...GOOD.map(row => row.replace('81.26', '81.25'))))
+  assert.equal(cent.weeks[0].status, 'ready')
+  assert.equal(cent.weeks[0].parlays[0].note, 'The slip says $81.25, 1 cent less. $81.26 is saved.')
   // The draw single: 10 × 3.5.
   assert.deepEqual([mw4.parlays[0].legs[0].pick, parlayOutcome(mw4.parlays[0]).payoutCents], ['D', 3500])
 })
@@ -172,7 +176,7 @@ test('every check that holds a week back', () => {
   assert.deepEqual(only('1,10.00,,Won,15.00,Nottm Forest,Man City,Man City,-200,,3,1,Lost,4'), ['The file says this parlay won, but its legs say it lost.'])
   assert.deepEqual(only('1,10.00,,Won,15.02,Arsenal,Hull,Arsenal,-200,,1,0,Won,4'), ['The slip says $15.02, but these odds and this stake return $15.00. Check the odds and the stake.'])
   assert.deepEqual(only('1,10.00,,Won,15.00,Arsenal,Hull,Arsenal,-200,,1,0,Won,4', '1,20.00,,,,Crystal Palace,Liverpool,Liverpool,-154,,1,3,Won,4'),
-    ['Line 3 gives this parlay a different stake, boost, result or return.'])
+    ['Line 3 gives this parlay a different stake, boost, bonus bet, result or return.'])
   // A parlay across two weeks, and the same parlay twice.
   assert.deepEqual(only('1,10.00,,Won,30.00,Arsenal,Hull,Arsenal,-200,,1,0,Won,4', '1,,,,,Man Utd,Spurs,Draw,+100,,2,2,Won,4'),
     ["This parlay's games are in different weeks, and the app keeps each parlay to one week."])
@@ -212,4 +216,26 @@ test('a problem holds back its whole week, and a week that already has parlays i
   assert.equal(plan(file(...GOOD), [{ ...saved, week: { ...saved.week, season: 2025 } }]).weeks[2].status, 'ready')
   assert.equal(plan(file(...GOOD), [{ ...saved, record: EMPTY_WEEK, version: 2, newestVersion: 2 }]).weeks[2].status, 'ready')
   assert.equal(plan(file(...GOOD), [{ ...saved, record: TOMBSTONE, version: 2, newestVersion: 2 }]).weeks[2].status, 'ready')
+})
+
+test("a bonus bet's column: yes, no or blank, and a won one's slip shows only the winnings", () => {
+  const withBonus = (...rows: string[]) => `${[`${HEADER},Bonus bet`, ...rows].join('\r\n')}\r\n`
+  // Matchweek 4's draw single, made with bonus money: bet365 keeps the $10
+  // stake and pays the $25.00 winnings, which its slip calls the Net Return.
+  const won = plan(withBonus('1,10.00,,Won,25.00,Man Utd,Spurs,Draw,+250,,2,2,Won,2,yes'))
+  assert.deepEqual(problems(won), [])
+  const single = won.weeks[0].record?.parlays[0]
+  assert.ok(single !== undefined)
+  assert.equal(single.bonus, true)
+  assert.deepEqual(parlayOutcome(single), { state: 'won', payoutCents: 2500, profitCents: 2500 })
+  assert.equal(won.weeks[0].parlays[0].note, null)
+  // Lost, it costs nothing. A later row can leave the column blank.
+  const lost = plan(withBonus('1,25.00,5,Lost,0.00,Nottm Forest,Man City,Man City,-150,,3,1,Lost,4,yes', '1,,,,,Arsenal,Hull,Arsenal,-700,,1,0,Won,5,'))
+  const double = lost.weeks[0].record?.parlays[0]
+  assert.ok(double !== undefined)
+  assert.deepEqual(parlayOutcome(double), { state: 'lost', payoutCents: 0, profitCents: 0 })
+  // No or blank is your own money, and anything else holds the week back.
+  const own = plan(withBonus('1,10.00,,Won,35.00,Man Utd,Spurs,Draw,+250,,2,2,Won,2,no')).weeks[0].record?.parlays[0]
+  assert.ok(own !== undefined && !Object.hasOwn(own, 'bonus'))
+  assert.deepEqual(problems(plan(withBonus('1,10.00,,Won,25.00,Man Utd,Spurs,Draw,+250,,2,2,Won,2,maybe'))), ['Bonus bet should be yes, or blank.'])
 })

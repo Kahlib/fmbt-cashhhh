@@ -11,6 +11,7 @@ import { DownloadIcon, FileIcon, StatusIcon } from '../components/Icons.tsx'
 import { PageHead } from '../components/Layout.tsx'
 import { Dialog } from '../components/Overlays.tsx'
 import { Confidence, LegResult, ParlayStatus, PickLabel, ScoreCell, TeamBadge } from '../components/Parlay.tsx'
+import { cashStake } from '../lib/bets/settle.ts'
 import type { Competition } from '../lib/bets/week-record.ts'
 import { visibleWeeks } from '../lib/bets/weeks.ts'
 import type { Fixture } from '../lib/fixtures.ts'
@@ -253,7 +254,7 @@ function ParlaysTable({ rows, sort, onSort, weekDays, name }: {
                   </span>
                 </td>
                 <td className="r">{view.odds === null ? '—' : oddsText(view.odds)}</td>
-                <td className="r">{money(view.parlay.stakeCents)}</td>
+                <td className="r">{money(view.parlay.stakeCents)}{view.parlay.bonus === true && <span className="cell-note">Bonus bet</span>}</td>
                 <td className={view.parlay.boostBps > 0 ? 'r' : 'r muted'}>{view.parlay.boostBps > 0 ? percentText(view.parlay.boostBps) : 'None'}</td>
                 <td><span className="state"><ParlayStatus view={view} />{note !== null && <span className="state-note">{note}</span>}</span></td>
                 {row.result === 'open' ? (
@@ -274,8 +275,8 @@ function ParlaysTable({ rows, sort, onSort, weekDays, name }: {
         {settled.length > 0 && (
           <tfoot>
             <tr>
-              <td colSpan={4}>{settled.length} settled</td>
-              <td className="r">{money(sum(row => row.view.parlay.stakeCents))}</td>
+              <td colSpan={4}>{settled.length} settled{settled.some(row => row.view.parlay.bonus === true) ? ', not counting bonus bets in the stake' : ''}</td>
+              <td className="r">{money(sum(row => cashStake(row.view.parlay)))}</td>
               <td /><td />
               <td className="r">{money(sum(row => row.view.payoutCents ?? 0))}</td>
               <td className={net > 0 ? 'r good-t' : net < 0 ? 'r bad-t' : 'r'}>{signedMoney(net)}</td>

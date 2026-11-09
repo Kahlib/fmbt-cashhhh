@@ -161,17 +161,19 @@ function Payout({ view }: { view: ParlayView }) {
     case 'won':
       label = 'Profit'
       value = <b className="good-t">{signedMoney(view.profitCents ?? 0)}</b>
-      note = `Returned ${money(view.payoutCents ?? 0)}${view.boostCents > 0 ? `, ${money(view.boostCents)} of it boost` : ''}`
+      // A bonus bet's stake doesn't come back, so its profit is all it returned.
+      note = `${parlay.bonus === true ? 'A bonus bet, so winnings only' : `Returned ${money(view.payoutCents ?? 0)}`}${view.boostCents > 0 ? `, ${money(view.boostCents)} of it boost` : ''}`
       break
     case 'lost':
       label = 'Loss'
-      value = <b className="bad-t">{signedMoney(view.profitCents ?? 0)}</b>
+      // A lost bonus bet loses $0.00, which stays plain, as every zero does.
+      value = <b className={(view.profitCents ?? 0) < 0 ? 'bad-t' : undefined}>{signedMoney(view.profitCents ?? 0)}</b>
       note = view.onlyLossWasADraw ? 'Lost on one leg, to a draw' : view.lostLegs === 1 ? 'Lost on one leg' : `Lost on ${view.lostLegs} legs`
       break
     case 'void':
       label = 'Returned'
       value = <b>{money(view.payoutCents ?? 0)}</b>
-      note = 'Every leg was dropped, so the stake came back'
+      note = `Every leg was dropped, so the ${parlay.bonus === true ? 'bonus bet' : 'stake'} came back`
       break
     default:
       label = 'To return'
@@ -214,8 +216,9 @@ export function ParlayCard({ view, fixtures, names, actions, admin, onEdit, onRe
             <ParlayStatus view={view} />
             {view.locked && <span className="tag"><LockIcon />Locked</span>}
             {legs === 1 && <span className="tag">Single</span>}
+            {parlay.bonus === true && <span className="tag">Bonus bet</span>}
           </div>
-          <p className="parlay-meta">{count(legs, 'leg', 'legs')}{dropped > 0 && view.odds !== null ? `, ${dropped} dropped,` : ''} {odds}, {money(parlay.stakeCents)} staked{boost}</p>
+          <p className="parlay-meta">{count(legs, 'leg', 'legs')}{dropped > 0 && view.odds !== null ? `, ${dropped} dropped,` : ''} {odds}, {money(parlay.stakeCents)} {parlay.bonus === true ? 'bonus bet' : 'staked'}{boost}</p>
         </div>
         <Payout view={view} />
       </div>

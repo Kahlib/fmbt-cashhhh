@@ -5,7 +5,7 @@
 // Money counts settled parlays, and leg stats count settled legs. A void
 // parlay, every leg dropped, returned its stake, so it counts for nothing.
 import { combinedOdds, decimalOdds, payoutCents } from '../bets/odds.ts'
-import { parlayOutcome } from '../bets/settle.ts'
+import { cashPayout, cashStake, parlayOutcome } from '../bets/settle.ts'
 import type { Competition, Leg, Parlay, Pick, Week, WeekRecord } from '../bets/week-record.ts'
 import { periodIndex } from '../periods.ts'
 
@@ -57,7 +57,7 @@ type Placed = {
   odds: number[]          // its legs' odds, leaving dropped legs out
   chance: number          // the odds' chance of it cashing, with the cut out
   decimal: number         // its decimal odds, cut left in
-  payoutCents: number     // what it pays if it cashes, boost included
+  payoutCents: number     // what it pays if it cashes, boost included, winnings only for a bonus bet
 }
 
 function placed(week: Week, parlay: Parlay): Placed {
@@ -73,7 +73,7 @@ function placed(week: Week, parlay: Parlay): Placed {
     odds,
     chance: odds.reduce((product, each) => product * fairChance(each), 1),
     decimal: odds.reduce((product, each) => product * decimalOdds(each), 1),
-    payoutCents: odds.length === 0 ? parlay.stakeCents : payoutCents(parlay.stakeCents, odds, parlay.boostBps),
+    payoutCents: odds.length === 0 ? cashStake(parlay) : cashPayout(parlay, payoutCents(parlay.stakeCents, odds, parlay.boostBps)),
   }
 }
 
@@ -117,7 +117,8 @@ export type ClubRow = RateRow & { code: string; drawn: number; lost: number; com
 export type SeasonStats = {
   parlays: number               // settled, not void
   cashed: number
-  stakedCents: number           // on those parlays
+  bonusBets: number             // how many of those were bonus bets
+  stakedCents: number           // on those parlays, your own money only
   netCents: number
   returnOnStake: number | null  // net ÷ staked
   weeks: WeekPoint[]            // weeks with anything settled, in the order played
@@ -178,7 +179,8 @@ export function seasonStats(weeks: readonly SeasonWeek[], competition: Competiti
   }
 
   const counted = parlays.filter(each => each.counts)
-  const staked = counted.reduce((sum, each) => sum + each.parlay.stakeCents, 0)
+  // Your own money only: a bonus bet's stake cost nothing.
+  const staked = counted.reduce((sum, each) => sum + cashStake(each.parlay), 0)
   const net = counted.reduce((sum, each) => sum + each.profitCents, 0)
   const withChance = legs.map(each => ({ result: each.result, chance: fairChance(each.leg.odds) }))
 
@@ -214,6 +216,7 @@ export function seasonStats(weeks: readonly SeasonWeek[], competition: Competiti
   return {
     parlays: counted.length,
     cashed: counted.filter(each => each.cashed).length,
+    bonusBets: counted.filter(each => each.parlay.bonus === true).length,
     stakedCents: staked,
     netCents: net,
     returnOnStake: staked === 0 ? null : net / staked,
@@ -233,7 +236,7 @@ export function seasonStats(weeks: readonly SeasonWeek[], competition: Competiti
     },
     // Each parlay's stake × (its chance × what it returns per dollar − 1),
     // boost included, added up, then rounded to the cent.
-    expectedCents: Math.round(counted.reduce((sum, each) => sum + each.chance * each.payoutCents - each.parlay.stakeCents, 0)),
+    expectedCents: Math.round(counted.reduce((sum, each) => sum + each.chance * each.payoutCents - cashStake(each.parlay), 0)),
     kinds: KINDS.map(kind => ({ kind, ...rate(legs.filter(each => pickKind(each.leg.pick, each.leg.odds) === kind).map(each => ({ result: each.result, chance: fairChance(each.leg.odds) }))) })),
     sizes,
     confidence: [1, 2, 3, 4, 5].map(rating => ({ rating, ...rate(legs.filter(each => each.leg.confidence === rating).map(each => ({ result: each.result, chance: fairChance(each.leg.odds) }))) })),
@@ -329,14 +332,15 @@ export type Analytics = { versus: Versus; moments: Moments; ledger: LedgerRow[] 
 
 // What a parlay's picks would have made as singles, each with an equal share
 // of its stake. A single is the same bet, so it keeps its own result, boost
-// and all. A dropped leg's single would have been void, so it makes nothing.
+// and all. A dropped leg's single would have been void, so it makes nothing,
+// and a bonus bet's lost single would have cost nothing.
 export function singlesCents(parlay: Parlay, profitCents: number): number {
   if (parlay.legs.length === 1) return profitCents
   const share = parlay.stakeCents / parlay.legs.length
   let total = 0
   for (const leg of parlay.legs) {
     if (leg.settlement?.outcome === 'won') total += share * (decimalOdds(leg.odds) - 1)
-    else if (leg.settlement?.outcome === 'lost') total -= share
+    else if (leg.settlement?.outcome === 'lost' && parlay.bonus !== true) total -= share
   }
   return Math.round(total)
 }
@@ -391,7 +395,7 @@ export function analytics(weeks: readonly SeasonWeek[], competition: Competition
       }
       // A promo that paid a leg the score says lost, or before there was a score.
       if (each.cashed && legs.some(leg => leg.settlement?.outcome === 'won' && leg.settlement.promo && leg.settlement.byScore !== 'won')) {
-        moments.promos.push({ ...ref, payoutCents: each.parlay.stakeCents + each.profitCents })
+        moments.promos.push({ ...ref, payoutCents: cashStake(each.parlay) + each.profitCents })
       }
       for (const leg of legs) {
         const result = legResult(leg)

@@ -33,11 +33,12 @@ export type Slip = {
   legs: SlipLeg[]
   stake: string
   boost: string
+  bonus: boolean              // made with bet365 bonus money
   editing: string | null      // the saved parlay being changed, by ID
   started: boolean            // showing the games that have started
 }
 
-export const EMPTY_SLIP: Slip = { competition: 'PL', period: null, legs: [], stake: '', boost: '', editing: null, started: false }
+export const EMPTY_SLIP: Slip = { competition: 'PL', period: null, legs: [], stake: '', boost: '', bonus: false, editing: null, started: false }
 
 // The slip for changing a saved parlay.
 export function slipFor(record: WeekRecord, week: Week, parlayId: string): Slip | null {
@@ -50,6 +51,7 @@ export function slipFor(record: WeekRecord, week: Week, parlayId: string): Slip 
     started: true,
     stake: (parlay.stakeCents / 100).toFixed(2),
     boost: parlay.boostBps === 0 ? '' : percentText(parlay.boostBps).replace('%', ''),
+    bonus: parlay.bonus === true,
     legs: parlay.legs.map(leg => {
       const settlement = leg.settlement
       const how = settlement?.how === 'override' ? (settlement.promo ? 'promo' : 'hand') : 'score'

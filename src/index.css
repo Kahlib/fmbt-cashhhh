@@ -670,3 +670,8 @@ table.hist.ileg tr.has-problem td, table.hist.ileg tr.has-note td { border-botto
 table.hist.ileg tr.problem td, table.hist.ileg tr.note td { padding-top: 0; font-size: 12px; white-space: normal; }
 table.hist.ileg tr.problem td { color: var(--bad-t); }
 table.hist.ileg tr.note td { color: var(--text-3); }
+
+/* ----- step 11.2: bonus bets ----- */
+.check-title { display: block; font-weight: 600; }
+.check-note { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+table.hist .cell-note { display: block; font-size: 12px; color: var(--text-3); }

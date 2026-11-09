@@ -208,7 +208,7 @@ export function ImportPreview({ live, snapshot, planned, onCancel, onDone }: {
 // One parlay of the file: what it comes to, then its legs and their checks.
 function ParlayCheck({ parlay, place, names }: { parlay: ImportParlay; place: number; names: Names }) {
   const size = parlay.legs.length === 1 ? 'Single' : `${parlay.legs.length} legs`
-  const details = [size, parlay.stakeCents === null ? null : money(parlay.stakeCents), parlay.boostBps ? `${percentText(parlay.boostBps)} boost` : null, `line ${parlay.line} in the file`]
+  const details = [size, parlay.stakeCents === null ? null : money(parlay.stakeCents), parlay.bonus === true ? 'bonus bet' : null, parlay.boostBps ? `${percentText(parlay.boostBps)} boost` : null, `line ${parlay.line} in the file`]
   const checked = parlay.state !== null && !hasProblems(parlay)
   return (
     <div className="ip">
@@ -218,7 +218,7 @@ function ParlayCheck({ parlay, place, names }: { parlay: ImportParlay; place: nu
         {checked && (
           <span className="sum">
             {parlay.state === 'won' ? <span className="st good"><StatusIcon kind="good" />Cashed {money(parlay.returnCents ?? 0)}</span>
-              : parlay.state === 'void' ? <span className="st none">Void, {money(parlay.returnCents ?? 0)} back</span>
+              : parlay.state === 'void' ? <span className="st none">Void, {parlay.bonus === true ? 'the bonus bet' : money(parlay.returnCents ?? 0)} back</span>
                 : <span className="st bad"><StatusIcon kind="bad" />Lost</span>}
             {parlay.note === null ? <span className="match-ok">Matches the slip</span> : <span className="cent">{parlay.note}</span>}
           </span>

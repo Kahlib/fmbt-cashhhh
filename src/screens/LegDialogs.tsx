@@ -13,7 +13,7 @@ import { TeamBadge } from '../components/Parlay.tsx'
 import { MATCH_WORDS } from '../lib/bets/edit.ts'
 import { nameOf, pickWords, type Names } from '../lib/names.ts'
 import { combinedOdds, payoutCents } from '../lib/bets/odds.ts'
-import { parlayOutcome, type Correction } from '../lib/bets/settle.ts'
+import { cashPayout, cashStake, parlayOutcome, type Correction } from '../lib/bets/settle.ts'
 import type { WaitingStatus } from '../lib/bets/view.ts'
 import { byScoreFor, isReason, MAX_REASON, type Leg, type Parlay } from '../lib/bets/week-record.ts'
 import { money, oddsText, signedMoney } from '../lib/format.ts'
@@ -96,18 +96,19 @@ export function WaitingDialog({ leg, status, parlay, number, legNumber, names, o
       {kind === 'drop' && (
         <div className="sum">
           {restLost && <div className="sum-row"><span>Parlay {number}</span><b className="bad-t">Already lost on another leg</b></div>}
-          {!restLost && rest.length === 0 && <div className="sum-row"><span>Parlay {number}</span><b>Every leg dropped, so the stake comes back</b></div>}
+          {!restLost && rest.length === 0 && <div className="sum-row"><span>Parlay {number}</span><b>Every leg dropped, so the {parlay.bonus === true ? 'bonus bet' : 'stake'} comes back</b></div>}
           {!restLost && rest.length > 0 && (
             <>
               <div className="sum-row"><span>Parlay {number}'s odds</span><b>{oddsText(combinedOdds(restOdds))}</b></div>
-              <div className="sum-row big"><span>{restOpen ? 'Returns if the rest land' : 'Returns'}</span><b>{money(payoutCents(parlay.stakeCents, restOdds, parlay.boostBps))}</b></div>
+              <div className="sum-row big"><span>{restOpen ? 'Returns if the rest land' : 'Returns'}</span><b>{money(cashPayout(parlay, payoutCents(parlay.stakeCents, restOdds, parlay.boostBps)))}</b></div>
             </>
           )}
         </div>
       )}
       {kind === 'lost' && (
         <div className="sum">
-          <div className="sum-row big"><span>Parlay {number} loses</span><b className="bad-t">{signedMoney(-parlay.stakeCents)}</b></div>
+          {/* A bonus bet costs nothing, so losing one loses $0.00. */}
+          <div className="sum-row big"><span>Parlay {number} loses{parlay.bonus === true ? ' its bonus bet' : ''}</span><b className={cashStake(parlay) > 0 ? 'bad-t' : undefined}>{signedMoney(0 - cashStake(parlay))}</b></div>
         </div>
       )}
       {kind === 'hand' && (

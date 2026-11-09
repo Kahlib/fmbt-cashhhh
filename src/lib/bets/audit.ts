@@ -86,6 +86,7 @@ export function describeChanges(before: WeekRecord, after: WeekRecord, only?: Re
     kept: (was, now, label) => {
       note(`${label} · stake in cents`, was.stakeCents, now.stakeCents)
       note(`${label} · boost in basis points`, was.boostBps, now.boostBps)
+      note(`${label} · bonus bet`, was.bonus === true, now.bonus === true)
       matchUp(was.legs, now.legs, {
         include: () => true,
         label: leg => `${label} · ${leg.home} v ${leg.away}`,

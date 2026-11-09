@@ -45,6 +45,10 @@ export type Parlay = {
   id: string
   stakeCents: number
   boostBps: number                // a boost on the profit, in hundredths of a percent: 250 is 2.5%, 0 is none
+  // Made with bet365 bonus money (step 11 plan, 11.2). Only ever true: a
+  // parlay staked with your own money leaves it out, so every record saved
+  // before 11.2 still checks out as it is.
+  bonus?: true
   legs: Leg[]                     // one leg makes a single
 }
 
@@ -144,8 +148,13 @@ function payoutFits(stakeCents: number, legs: readonly Leg[], boostBps: number):
   return exactPayoutCents(stakeCents, legs.map(leg => leg.odds), boostBps) <= BigInt(MAX_PAYOUT_CENTS)
 }
 
+const PARLAY_FIELDS = ['id', 'stakeCents', 'boostBps', 'legs']
+
 function isParlay(value: unknown): value is Parlay {
-  if (!hasExactly(value, ['id', 'stakeCents', 'boostBps', 'legs'])) return false
+  // A bonus bet has one more field, bonus, which has to be exactly true.
+  const bonus = typeof value === 'object' && value !== null && Object.hasOwn(value, 'bonus')
+  if (!hasExactly(value, bonus ? [...PARLAY_FIELDS, 'bonus'] : PARLAY_FIELDS)) return false
+  if (bonus && value.bonus !== true) return false
   const { id, stakeCents, boostBps, legs } = value
   if (!isUuid(id) || !isStakeCents(stakeCents) || !isBoostBps(boostBps)) return false
   if (!Array.isArray(legs) || legs.length < 1 || legs.length > MAX_LEGS_PER_PARLAY || !legs.every(isLeg)) return false
@@ -196,7 +205,7 @@ export type EntryProblem =
   | 'bad fixture'      // a game's teams or kick-off don't look right, which fixtures read the normal way never do
 
 export type NewLeg = { fixtureId: number; pick: Pick; odds: number; confidence: number }
-export type NewParlay = { stakeCents: number; boostBps: number; legs: NewLeg[] }
+export type NewParlay = { stakeCents: number; boostBps: number; bonus?: boolean; legs: NewLeg[] }
 
 // Adds a parlay to a week, after checking every part of it. Adding is
 // allowed on any week that isn't deleted, locked or not, since adding a
@@ -236,7 +245,8 @@ export function addParlay(
   }
   if (!payoutFits(entry.stakeCents, legs, entry.boostBps)) return fail('payout too big')
 
-  const parlay: Parlay = { id: crypto.randomUUID(), stakeCents: entry.stakeCents, boostBps: entry.boostBps, legs }
+  // Only a bonus bet carries the bonus field, so a record has one way to say each.
+  const parlay: Parlay = { id: crypto.randomUUID(), stakeCents: entry.stakeCents, boostBps: entry.boostBps, ...(entry.bonus === true ? { bonus: true as const } : {}), legs }
   const next: WeekRecord = { ...record, parlays: [...record.parlays, parlay] }
   // A last check of the whole thing, so nothing that fails here can be saved.
   // Everything above passed, so only a fixture with odd data, such as a team

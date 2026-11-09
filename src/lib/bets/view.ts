@@ -5,7 +5,7 @@ import type { Fixture } from '../fixtures.ts'
 import { clockTime, count, dayAndTime, formatDay, money, oddsText, percentText } from '../format.ts'
 import type { AuditEntry, AuditProblem, Change, ChangeValue } from './audit.ts'
 import { boostCents, combinedOdds, payoutCents } from './odds.ts'
-import { finalScore90, isParlayLocked, parlayOutcome, type ParlayState } from './settle.ts'
+import { cashPayout, cashStake, finalScore90, isParlayLocked, parlayOutcome, type ParlayState } from './settle.ts'
 import { byScoreFor, type Leg, type Parlay, type Pick, type WeekRecord } from './week-record.ts'
 
 export type WaitingStatus = 'postponed' | 'cancelled' | 'suspended' | 'awarded' | 'missing'
@@ -66,7 +66,7 @@ export type ParlayView = {
   odds: number | null             // as bet365 shows them, leaving dropped legs out; null once every leg is dropped
   payoutCents: number | null      // what it returned, once it's won or void
   profitCents: number | null      // once settled: the return less the stake, the stake lost, or 0 when void
-  potentialCents: number | null   // while it's pending: what it returns if every leg still to play wins
+  potentialCents: number | null   // while it's pending: what it returns if every leg still to play wins, winnings only for a bonus bet
   boostCents: number              // how much of the payout or the potential is boost
   lostLegs: number
   onlyLossWasADraw: boolean       // lost on one leg, to a draw: the heartbreaker
@@ -83,7 +83,7 @@ export function parlayView(parlay: Parlay, index: number, fixtures: ReadonlyMap<
   const lost = states.filter(state => state.kind === 'lost')
   let potential: number | null = null
   let boost = 0
-  if (outcome.state === 'pending') potential = payoutCents(parlay.stakeCents, odds, parlay.boostBps)
+  if (outcome.state === 'pending') potential = cashPayout(parlay, payoutCents(parlay.stakeCents, odds, parlay.boostBps))
   if ((outcome.state === 'pending' || outcome.state === 'won') && parlay.boostBps > 0) boost = boostCents(parlay.stakeCents, odds, parlay.boostBps)
   return {
     parlay,
@@ -103,7 +103,8 @@ export function parlayView(parlay: Parlay, index: number, fixtures: ReadonlyMap<
 
 export type WeekSummary = {
   parlays: number
-  stakedCents: number
+  bonusBets: number       // how many of them were bonus bets, whose stakes cost nothing
+  stakedCents: number     // your own money: bonus bets' stakes aren't in it
   returnedCents: number   // what settled parlays paid back: won ones, and void ones' stakes
   netCents: number        // profit and loss on the parlays that have settled
   settled: number
@@ -114,11 +115,12 @@ export type WeekSummary = {
 }
 
 export function weekSummary(record: WeekRecord, fixtures: ReadonlyMap<number, Fixture>): WeekSummary {
-  const summary: WeekSummary = { parlays: 0, stakedCents: 0, returnedCents: 0, netCents: 0, settled: 0, cashed: 0, legsToSettle: 0, live: 0, waiting: 0 }
+  const summary: WeekSummary = { parlays: 0, bonusBets: 0, stakedCents: 0, returnedCents: 0, netCents: 0, settled: 0, cashed: 0, legsToSettle: 0, live: 0, waiting: 0 }
   for (const parlay of record.parlays) {
     const outcome = parlayOutcome(parlay)
     summary.parlays += 1
-    summary.stakedCents += parlay.stakeCents
+    if (parlay.bonus === true) summary.bonusBets += 1
+    summary.stakedCents += cashStake(parlay)
     if (outcome.state !== 'pending') {
       summary.settled += 1
       summary.netCents += outcome.profitCents ?? 0
@@ -168,6 +170,11 @@ const HOW_WORDS = new Map([['auto', 'from the score'], ['override', 'by hand'], 
 const FIELDS = new Map<string, Field>([
   ['stake in cents', { name: 'stake', value: v => money(Number(v)) }],
   ['boost in basis points', { name: 'boost', value: v => percentText(Number(v)) }],
+  ['bonus bet', {
+    name: 'bonus bet',
+    value: v => (v === true ? 'yes' : 'no'),
+    words: (_from, to) => (to === 'yes' ? 'made a bonus bet' : 'no longer a bonus bet'),
+  }],
   ['odds', { name: 'odds', value: v => oddsText(Number(v)) }],
   ['pick', { name: 'pick', value: v => PICK_WORDS.get(String(v)) ?? String(v) }],
   ['confidence', { name: 'confidence', value: v => `${String(v)} of 5` }],

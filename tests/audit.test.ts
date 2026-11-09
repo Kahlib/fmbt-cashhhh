@@ -94,6 +94,7 @@ test('every field of a parlay and a leg is compared', () => {
   const cases: [string, WeekRecord, Change[]][] = [
     ['stake', changed(r => { if (r.parlays[0]) r.parlays[0].stakeCents = 5000 }), [{ what: 'Parlay 1 · stake in cents', from: 2500, to: 5000 }]],
     ['boost', changed(r => { if (r.parlays[1]) r.parlays[1].boostBps = 250 }), [{ what: 'Parlay 2 · boost in basis points', from: 0, to: 250 }]],
+    ['bonus bet', changed(r => { if (r.parlays[1]) r.parlays[1].bonus = true }), [{ what: 'Parlay 2 · bonus bet', from: false, to: true }]],
     ['odds', changed(r => { firstLeg(r).odds = -110 }), [{ what: 'Parlay 1 · MCI v LIV · odds', from: 150, to: -110 }]],
     ['confidence', changed(r => { firstLeg(r).confidence = 5 }), [{ what: 'Parlay 1 · MCI v LIV · confidence', from: 3, to: 5 }]],
     ['kick-off', changed(r => { firstLeg(r).kickoff = '2026-11-07T20:00:00.000Z' }),

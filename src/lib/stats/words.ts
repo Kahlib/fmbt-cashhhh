@@ -33,11 +33,18 @@ export const sizeName = (legs: number) => (legs === 1 ? 'Singles' : `${legs}-leg
 // "a", "a and b", or "a, b and c".
 export const listed = (items: readonly string[]) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`)
 
+// "1 parlay", "3 parlays, plus 1 bonus bet" or "2 bonus bets": the parlays
+// staked with your own money, then any made with bonus bets, which cost nothing.
+export function betsText(cash: number, bonus: number): string {
+  const parts = [cash > 0 || bonus === 0 ? count(cash, 'parlay', 'parlays') : null, bonus > 0 ? count(bonus, 'bonus bet', 'bonus bets') : null]
+  return parts.filter(part => part !== null).join(', plus ')
+}
+
 // Under the bankroll: what's been staked, and how much of the high point
 // has gone since, when it's more than a dollar.
 export function heroSentence(stats: SeasonStats): Sentence {
   if (stats.parlays === 0) return ['No parlays have settled yet. This page fills in as they do.']
-  const parts: Sentence = [`On ${money(stats.stakedCents)} staked across ${stats.parlays === 1 ? '1 parlay' : `${stats.parlays} parlays`}.`]
+  const parts: Sentence = [`On ${money(stats.stakedCents)} staked across ${betsText(stats.parlays - stats.bonusBets, stats.bonusBets)}.`]
   const peak = stats.peak
   if (peak !== null && peak.totalCents - stats.netCents > 100) {
     parts.push(` You were up ${money(peak.totalCents)} after ${periodName(peak.week.period)} and have given back ${money(peak.totalCents - stats.netCents)} since.`)

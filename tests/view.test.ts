@@ -127,15 +127,15 @@ test("A parlay's odds and returns match KMan's bet365 slip, pending and won", ()
 })
 
 test('A dropped leg comes out of the odds, and a parlay with every leg dropped is void', () => {
-  // −300 won, +120 still to play, −110 dropped, $20: +193 returns $58.66,
-  // as the browser check of the waiting dialog shows.
+  // −300 won, +120 still to play, −110 dropped, $20: +193 returns $58.666...,
+  // which rounds up to $58.67, as a parlay rounds.
   const games = byId(ended(1, 3, 1), game(2), game(3, { status: 'postponed' }))
   let record = settled(weekOf(parlay(1, [leg(1, { odds: -300 }), leg(2, { odds: 120 }), leg(3, { odds: -110 })], { stakeCents: 2000 })), games)
   record = voidLeg(record, uuid(1003), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)
   const view = parlayView(record.parlays[0], 0, games)
   assert.equal(view.state, 'pending')
   assert.equal(view.odds, 193)
-  assert.equal(view.potentialCents, 5866)
+  assert.equal(view.potentialCents, 5867)
 
   let allDropped = weekOf(parlay(2, [leg(3, { odds: -110 })], { stakeCents: 500 }))
   allDropped = voidLeg(allDropped, uuid(1003), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)
@@ -167,7 +167,7 @@ test("A week's totals, and the sentence under My parlays' title", () => {
   record = voidLeg(record, uuid(1104), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)
   const summary = weekSummary(record, games)
   assert.deepEqual(summary, {
-    parlays: 4, stakedCents: 6000, returnedCents: 5500, netCents: 2500 - 1000 + 0,
+    parlays: 4, bonusBets: 0, stakedCents: 6000, returnedCents: 5500, netCents: 2500 - 1000 + 0,
     settled: 3, cashed: 1, legsToSettle: 4, live: 1, waiting: 1,
   })
   assert.equal(weekSentence('Matchweek 12', summary), 'Matchweek 12 is in play. 4 of your legs are still to settle, 1 of them live.')
@@ -232,4 +232,20 @@ test("Changing a locked parlay lists every change in words for the reason dialog
     'Parlay 1, ARS v CHE: paid by a promo',
     'Parlay 1, ARS v CHE: reason from nothing to “2-Up: they went 2–0 up”',
   ])
+})
+
+test("Bonus bets: a parlay's view, a week's totals and the audit log's words", () => {
+  const games = byId(ended(1, 3, 1), ended(2, 0, 2), game(3))
+  const record = settled(weekOf(
+    parlay(1, [leg(1, { odds: 100 }), leg(3, { odds: 120 })], { stakeCents: 2000, bonus: true }), // won one, one to play
+    parlay(2, [leg(2)], { stakeCents: 1000, bonus: true }),                                       // lost
+    parlay(3, [leg(1, { id: uuid(1101), odds: 100 })], { stakeCents: 500 }),                      // won, your own money
+  ), games)
+  // Its winnings if the +120 lands: 20 × 2 × 2.2 is $88.00, less the $20 stake.
+  assert.equal(parlayView(record.parlays[0], 0, games).potentialCents, 6800)
+  // Only the $5 is your money staked, the lost bonus bet costs nothing, and the $5 single returns $10.
+  const summary = weekSummary(record, games)
+  assert.deepEqual([summary.parlays, summary.bonusBets, summary.stakedCents, summary.returnedCents, summary.netCents], [3, 2, 500, 1000, 500])
+  assert.equal(changeWords({ what: 'Parlay 2 · bonus bet', from: false, to: true }), 'Parlay 2: made a bonus bet')
+  assert.equal(changeWords({ what: 'Parlay 2 · bonus bet', from: true, to: false }), 'Parlay 2: no longer a bonus bet')
 })

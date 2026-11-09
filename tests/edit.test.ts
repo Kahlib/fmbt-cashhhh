@@ -48,7 +48,7 @@ function entryOf(slip: Slip): NewParlay {
   const boostBps = parseBoost(slip.boost)
   assert.ok(stakeCents !== null && boostBps !== null)
   return {
-    stakeCents, boostBps,
+    stakeCents, boostBps, bonus: slip.bonus,
     legs: slip.legs.map(each => {
       const odds = parseOdds(each.odds)
       assert.ok(odds !== null)
@@ -166,7 +166,7 @@ test('A saved parlay fills the slip, and what the slip shows reads back the same
 
   const slip = slipFor(record, WEEK, record.parlays[0].id)
   assert.ok(slip !== null)
-  assert.deepEqual({ ...slip, legs: [] }, { competition: 'PL', period: 'MW12', legs: [], stake: '25.50', boost: '2.5', editing: record.parlays[0].id, started: true })
+  assert.deepEqual({ ...slip, legs: [] }, { competition: 'PL', period: 'MW12', legs: [], stake: '25.50', boost: '2.5', bonus: false, editing: record.parlays[0].id, started: true })
   assert.deepEqual(slip.legs, [
     { fixtureId: 1, pick: 'H', odds: `${MINUS}110`, confidence: 3, how: 'score', outcome: 'won', reason: '', voided: null },
     { fixtureId: 2, pick: 'H', odds: '+150', confidence: 4, how: 'promo', outcome: 'won', reason: '2-Up', voided: null },
@@ -186,6 +186,13 @@ test('A saved parlay fills the slip, and what the slip shows reads back the same
   for (const boostBps of [0, 1, 10, 105, 250, 500, 10_000]) assert.equal(parseBoost(slipOf(-110, boostBps, 2500).boost), boostBps)
   assert.equal(slipOf(-110, 0, 2500).boost, '') // no boost leaves the box empty
   for (const stakeCents of [1, 10, 2550, 99_999, 1_000_000]) assert.equal(parseStake(slipOf(-110, 0, stakeCents).stake), stakeCents)
+
+  // A bonus bet ticks the slip's box, and saving it again keeps it a bonus bet.
+  const bonus = added(EMPTY_WEEK, games, { stakeCents: 2500, boostBps: 0, bonus: true, legs: [{ fixtureId: 6, pick: 'H', odds: -110, confidence: 3 }] })
+  const bonusSlip = slipFor(bonus, WEEK, bonus.parlays[0].id)
+  assert.ok(bonusSlip !== null && bonusSlip.bonus)
+  assert.ok(isDeepStrictEqual(save(bonus, bonusSlip, games), bonus))
+  assert.equal(save(bonus, { ...bonusSlip, bonus: false }, games).parlays[0].bonus, undefined, 'untick it and it is your own money')
   function slipOf(odds: number, boostBps: number, stakeCents: number): Slip {
     const one = added(EMPTY_WEEK, games, { stakeCents, boostBps, legs: [{ fixtureId: 6, pick: 'H', odds, confidence: 3 }] })
     const filled = slipFor(one, WEEK, one.parlays[0].id)

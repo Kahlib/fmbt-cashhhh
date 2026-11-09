@@ -190,21 +190,32 @@ export function unsettleLeg(record: WeekRecord, legId: string): WeekRecord {
 export type ParlayState = 'pending' | 'won' | 'lost' | 'void'
 export type ParlayOutcome = { state: ParlayState; payoutCents: number | null; profitCents: number | null }
 
-// What a parlay pays so far:
+// Bonus bets are bet365's money, not yours (step 11 plan, 11.2). One costs
+// you nothing, so its stake never counts as money staked, and losing it
+// loses nothing. Winning pays only the winnings, since bet365 keeps the
+// bonus stake: its slip calls that the Net Return.
+export const cashStake = (parlay: Parlay): number => (parlay.bonus === true ? 0 : parlay.stakeCents)
+
+// What a payout puts in your account: all of it, or a bonus bet's winnings.
+export const cashPayout = (parlay: Parlay, payoutCents: number): number => (parlay.bonus === true ? payoutCents - parlay.stakeCents : payoutCents)
+
+// What a parlay pays so far, in your own money:
 //   - lost as soon as any leg loses, even with others still to play
 //   - pending while any leg is unsettled
-//   - void when every leg was dropped, which gives the stake back
+//   - void when every leg was dropped, which gives the stake back, though a
+//     bonus bet's comes back as bonus money, so it's nothing here
 //   - otherwise won: the stake times every won leg's decimal odds, with
-//     dropped legs left out, plus any boost, rounded down to the cent as
-//     bet365 rounds (odds.ts)
+//     dropped legs left out, plus any boost, rounded to the cent as bet365
+//     rounds (odds.ts), less the stake for a bonus bet
 export function parlayOutcome(parlay: Parlay): ParlayOutcome {
   const outcomes = parlay.legs.map(leg => leg.settlement?.outcome ?? null)
-  if (outcomes.includes('lost')) return { state: 'lost', payoutCents: 0, profitCents: -parlay.stakeCents }
+  // 0 minus, not a plain minus sign, so a lost bonus bet's profit is 0, never -0.
+  if (outcomes.includes('lost')) return { state: 'lost', payoutCents: 0, profitCents: 0 - cashStake(parlay) }
   if (outcomes.includes(null)) return { state: 'pending', payoutCents: null, profitCents: null }
   const wonOdds = parlay.legs.filter(leg => leg.settlement?.outcome === 'won').map(leg => leg.odds)
-  if (wonOdds.length === 0) return { state: 'void', payoutCents: parlay.stakeCents, profitCents: 0 }
-  const payout = payoutCents(parlay.stakeCents, wonOdds, parlay.boostBps)
-  return { state: 'won', payoutCents: payout, profitCents: payout - parlay.stakeCents }
+  if (wonOdds.length === 0) return { state: 'void', payoutCents: cashStake(parlay), profitCents: 0 }
+  const payout = cashPayout(parlay, payoutCents(parlay.stakeCents, wonOdds, parlay.boostBps))
+  return { state: 'won', payoutCents: payout, profitCents: payout - cashStake(parlay) }
 }
 
 // A parlay locks once every leg in it is settled. After that, changing or

@@ -46,7 +46,7 @@ function localTime(iso: string): string {
 
 export function parlaysCsv(rows: readonly ParlayRow[], name: (code: string) => string): string {
   return toCsv(
-    ['Week', 'Competition', 'Parlay', 'Legs', 'Picks', 'Odds', 'Stake', 'Boost (%)', 'Result', 'Returned', 'Profit', 'To return'],
+    ['Week', 'Competition', 'Parlay', 'Legs', 'Picks', 'Odds', 'Stake', 'Bonus bet', 'Boost (%)', 'Result', 'Returned', 'Profit', 'To return'],
     rows.map(row => {
       const view = row.view
       const parlay = view.parlay
@@ -59,6 +59,7 @@ export function parlaysCsv(rows: readonly ParlayRow[], name: (code: string) => s
         parlay.legs.map(leg => (leg.pick === 'D' ? `Draw (${name(leg.home)} v ${name(leg.away)})` : name(leg.pick === 'H' ? leg.home : leg.away))).join(' + '),
         view.odds,
         dollars(parlay.stakeCents),
+        parlay.bonus === true ? 'Yes' : null,
         parlay.boostBps / 100,
         PARLAY_RESULT_WORDS[row.result],
         settled ? dollars(view.payoutCents ?? 0) : null,

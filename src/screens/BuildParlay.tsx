@@ -121,7 +121,7 @@ export function BuildParlay({ live, snapshot, slip, onSlip, onDone, onCancel }: 
 
     const week: Week = { season: live.season, competition, period: slip.period }
     const base = editable(live.week(week))
-    const entry = { stakeCents: stake, boostBps: boost, legs: slip.legs.map((leg, i) => ({ fixtureId: leg.fixtureId, pick: leg.pick, odds: legOdds[i], confidence: leg.confidence })) }
+    const entry = { stakeCents: stake, boostBps: boost, bonus: slip.bonus, legs: slip.legs.map((leg, i) => ({ fixtureId: leg.fixtureId, pick: leg.pick, odds: legOdds[i], confidence: leg.confidence })) }
     let made: ReturnType<typeof recordFromSlip>
     try {
       made = recordFromSlip(base, week, slip, entry, fixtures, Date.now())
@@ -295,19 +295,27 @@ export function BuildParlay({ live, snapshot, slip, onSlip, onDone, onCancel }: 
             <Affix label="Boost, if bet365 gave one" after="%" value={slip.boost} onChange={value => onSlip({ ...slip, boost: value })}
               problem={boost === null ? 'Type a boost from 0.01% to 100%, or leave it empty.' : null} />
           </div>
+          <label className="check-row bonus-row">
+            <input type="checkbox" checked={slip.bonus} onChange={event => onSlip({ ...slip, bonus: event.target.checked })} />
+            <span>
+              <span className="check-title">Bonus bet</span>
+              <span className="check-note">Made with bet365 bonus money. If it loses, it costs you nothing. If it wins, only the winnings come back.</span>
+            </span>
+          </label>
           {allFinished && slip.editing === null && (
             <Note><p><b>Every game here has finished,</b> so this parlay settles and locks as soon as you save it. Check it first: changing it after that needs Admin mode.</p></Note>
           )}
           {ready && stake !== null && boost !== null && (
             <div className="sum">
               <div className="sum-row"><span>Odds, as bet365 shows them</span><b>{oddsText(combinedOdds(legOdds))}</b></div>
-              <div className="sum-row big"><span>Returns</span><b>{money(payoutCents(stake, legOdds, boost))}</b></div>
+              {/* A bonus bet returns only its winnings, which bet365's slip calls the Net Return. */}
+              <div className="sum-row big"><span>{slip.bonus ? 'Returns, winnings only' : 'Returns'}</span><b>{money(slip.bonus ? payoutCents(stake, legOdds, boost) - stake : payoutCents(stake, legOdds, boost))}</b></div>
               {boost > 0 && <div className="sum-row"><span>Boost included</span><b>{money(boostCents(stake, legOdds, boost))}</b></div>}
-              <div className="sum-row"><span>Profit if every leg lands</span><b>{money(payoutCents(stake, legOdds, boost) - stake)}</b></div>
+              {!slip.bonus && <div className="sum-row"><span>Profit if every leg lands</span><b>{money(payoutCents(stake, legOdds, boost) - stake)}</b></div>}
               {dropped > 0 && (
                 <div className="sum-row">
                   <span>{dropped === 1 ? 'Without the dropped leg' : `Without the ${dropped} dropped legs`}</span>
-                  <b>{keptOdds.length === 0 ? `${money(stake)} back` : `${oddsText(combinedOdds(keptOdds))}, returns ${money(payoutCents(stake, keptOdds, boost))}`}</b>
+                  <b>{keptOdds.length === 0 ? (slip.bonus ? 'The bonus bet back' : `${money(stake)} back`) : `${oddsText(combinedOdds(keptOdds))}, returns ${money(slip.bonus ? payoutCents(stake, keptOdds, boost) - stake : payoutCents(stake, keptOdds, boost))}`}</b>
                 </div>
               )}
             </div>

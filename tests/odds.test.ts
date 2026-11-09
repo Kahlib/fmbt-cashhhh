@@ -1,6 +1,6 @@
 // Tests for src/lib/bets/odds.ts: bet365's prices, and returns in whole
-// cents. Every return here was worked out by hand, and four of them are
-// KMan's own bet365 slips from 8 November 2026.
+// cents. Every return here was worked out by hand, and eight of them are
+// KMan's own bet365 slips, from 8 and 9 November 2026.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -91,16 +91,39 @@ test("KMan's bet365 slips, to the cent", () => {
   assert.equal(boostCents(2500, second, 500), 2062)
 
   // $25 on -110 and -125 with a 2.5% boost: 21/11 × 9/5 = 189/55, shown as
-  // +243. $85.909..., plus 2.5% of the $60.909... profit, $1.522...,
-  // is $87.4318..., which rounds down to $87.43.
+  // +243. bet365's slip said $87.43, with $1.52 of boost. The parlay rule
+  // gives $85.909... up to $85.91, plus 2.5% of the $60.91 profit, $1.52275,
+  // up to $1.53: $87.44. It's the one slip of KMan's that no single rule
+  // fits, and the four won slips below outweigh it (step 11 plan, 11.2).
   const third = [-110, -125]
   assert.equal(combinedOdds(third), 243)
-  assert.equal(payoutCents(2500, third, 250), 8743)
-  assert.equal(boostCents(2500, third, 250), 152)
+  assert.equal(payoutCents(2500, third, 250), 8744, "a cent above the slip's $87.43")
+  assert.equal(boostCents(2500, third, 250), 153)
 
-  // $25 on -110 alone: 25 × 21/11 is $47.727..., shown as $47.72.
+  // $25 on -110 alone: 25 × 21/11 is $47.727..., shown as $47.72. A single rounds down.
   assert.equal(payoutCents(2500, [-110]), 4772)
   assert.equal(combinedOdds([-110]), -110, 'a single shows its own odds')
+
+  // The four won parlays from the backfill, from 9 November 2026: $25 each,
+  // with a 5% boost. Each one's return rounds up to the cent, then so does
+  // its boost, worked out on that return.
+  // 1.60 × 1.25 × 11/7 = 22/7: $78.571... up to $78.58, plus 5% of $53.58,
+  // $2.679, up to $2.68, makes $81.26.
+  assert.equal(payoutCents(2500, [-167, -400, -175], 500), 8126)
+  assert.equal(boostCents(2500, [-167, -400, -175], 500), 268)
+  // 1.50 × 7/6 × 1.70 = 2.975: $74.375 up to $74.38, plus 5% of $49.38,
+  // $2.469, up to $2.47, makes $76.85.
+  assert.equal(payoutCents(2500, [-200, -600, -143], 500), 7685)
+  assert.equal(boostCents(2500, [-200, -600, -143], 500), 247)
+  // 11/7 × 13/11 × 2.10 = 3.9: exactly $97.50, plus 5% of $72.50, $3.625,
+  // up to $3.63, makes $101.13.
+  assert.equal(payoutCents(2500, [-175, -550, 110], 500), 10_113)
+  assert.equal(boostCents(2500, [-175, -550, 110], 500), 363)
+  // 1.70 × 2.00 × 2.25 = 7.65: exactly $191.25, plus 5% of $166.25, $8.3125,
+  // up to $8.32, makes $199.57. The nearest cent would be $8.31, so this
+  // slip shows the boost rounds up rather than to the nearest cent.
+  assert.equal(payoutCents(2500, [-143, 100, 125], 500), 19_957)
+  assert.equal(boostCents(2500, [-143, 100, 125], 500), 832)
 })
 
 test('a parlay shorter than evens shows as minus odds, rounded against you', () => {
@@ -110,17 +133,23 @@ test('a parlay shorter than evens shows as minus odds, rounded against you', () 
   assert.equal(combinedOdds([-200, -200]), 125, '1.5 × 1.5 = 2.25, shown as +125')
 })
 
-test('returns round down to the cent, once, at the end', () => {
-  // Rounding the return and the boost apart would make the third slip $85.90
-  // + $1.52 = $87.42. Rounding once makes it $87.43, as bet365 did.
-  assert.equal(payoutCents(2500, [-110, -125]) + boostCents(2500, [-110, -125], 250), 8742)
-  assert.equal(payoutCents(2500, [-110, -125], 250), 8743)
+test('a single rounds down once, at the end, and a parlay rounds its return up, then its boost', () => {
+  // Singles.
+  assert.equal(payoutCents(5000, [-110]), 9545, '$50 on -110 is $95.4545..., so $95.45')
   assert.equal(payoutCents(1, [150]), 2, '1 cent on +150 is 2.5 cents, so 2')
   assert.equal(payoutCents(3, [-200]), 4, '3 cents on -200 is 4.5 cents, so 4')
   assert.equal(payoutCents(2500, [150]), 6250, '$25 on +150 returns exactly $62.50')
+  // A boosted single still rounds once: $47.727... plus 5% of $22.727... is $48.863..., so $48.86.
+  assert.equal(payoutCents(2500, [-110], 500), 4886)
+  assert.equal(boostCents(2500, [-110], 500), 113, "5% of $22.727... is $1.136..., so $1.13")
+  // Parlays.
+  assert.equal(payoutCents(1, [150, -200]), 4, '1 cent on +150 and -200 is 3.75 cents, so 4')
   assert.equal(payoutCents(2500, [150, -200]), 9375, '$25 on +150 and -200 returns exactly $93.75')
-  assert.equal(payoutCents(5000, [-110]), 9545, '$50 on -110 is $95.4545..., so $95.45')
   assert.equal(payoutCents(2500, [100, -100]), 10_000, '$25 on +100 and -100 returns $100')
+  // The boost is worked out on the return once it's rounded up: $85.91 is a
+  // $60.91 profit, and 2.5% of that is $1.52275, so $1.53.
+  assert.equal(payoutCents(2500, [-110, -125]) + boostCents(2500, [-110, -125], 250), 8744)
+  assert.equal(payoutCents(2500, [-110, -125], 250), 8744)
 })
 
 test('even one floating-point step can get a return wrong', () => {
@@ -143,8 +172,9 @@ test('even one floating-point step can get a return wrong', () => {
 test('a long parlay stays exact', () => {
   // 15 legs at +100 double the stake 15 times: $10 becomes $327,680.
   assert.equal(payoutCents(1000, Array.from({ length: 15 }, () => 100)), 32_768_000)
-  // 20 legs at -110: 1000 × (21/11)^20, worked out with whole numbers.
-  assert.equal(payoutCents(1000, Array.from({ length: 20 }, () => -110)), Number((1000n * 21n ** 20n) / 11n ** 20n))
+  // 20 legs at -110: 1000 × (21/11)^20, worked out with whole numbers and
+  // rounded up, as a parlay rounds.
+  assert.equal(payoutCents(1000, Array.from({ length: 20 }, () => -110)), Number((1000n * 21n ** 20n + 11n ** 20n - 1n) / 11n ** 20n))
 })
 
 test('dropped legs and boosts', () => {

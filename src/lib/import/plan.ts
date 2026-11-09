@@ -20,17 +20,19 @@ export const PROMO_REASON = "Paid early by bet365's 2-goals-ahead promo."
 export const VOID_REASON = 'bet365 voided this leg.'
 
 // The file's columns, as Excel shows them, matched without minding case.
-// Competition and Date are only needed when a pairing is played twice.
-type Column = 'parlay' | 'stake' | 'boost' | 'result' | 'returned' | 'home' | 'away' | 'pick' | 'odds' | 'early'
+// Competition and Date are only needed when a pairing is played twice, and
+// Bonus bet only when a parlay was made with bet365 bonus money (step 11.2).
+// A bonus bet's Returned is what its slip calls the Net Return: winnings only.
+type Column = 'parlay' | 'stake' | 'boost' | 'bonus' | 'result' | 'returned' | 'home' | 'away' | 'pick' | 'odds' | 'early'
   | 'homeGoals' | 'awayGoals' | 'legResult' | 'confidence' | 'competition' | 'date'
 const COLUMNS = new Map<string, Column>([
-  ['parlay', 'parlay'], ['stake', 'stake'], ['boost %', 'boost'], ['result', 'result'], ['returned', 'returned'],
+  ['parlay', 'parlay'], ['stake', 'stake'], ['boost %', 'boost'], ['bonus bet', 'bonus'], ['result', 'result'], ['returned', 'returned'],
   ['home', 'home'], ['away', 'away'], ['pick', 'pick'], ['odds', 'odds'], ['early payout', 'early'],
   ['home goals', 'homeGoals'], ['away goals', 'awayGoals'], ['leg result', 'legResult'], ['confidence', 'confidence'],
   ['competition', 'competition'], ['date', 'date'],
 ])
-const OPTIONAL = new Set<Column>(['competition', 'date'])
-const PARLAY_COLUMNS = ['stake', 'boost', 'result', 'returned'] as const
+const OPTIONAL = new Set<Column>(['bonus', 'competition', 'date'])
+const PARLAY_COLUMNS = ['stake', 'boost', 'bonus', 'result', 'returned'] as const
 
 export type SlipResult = 'won' | 'lost' | 'void'
 export type LegShown = 'won' | 'lost' | 'drawn' | 'dropped' | 'promo'
@@ -55,6 +57,7 @@ export type ImportParlay = {
   line: number
   stakeCents: number | null
   boostBps: number | null
+  bonus: boolean | null     // made with bet365 bonus money; null when the cell isn't yes, no or blank
   slipResult: SlipResult | null
   slipReturnCents: number | null
   legs: ImportLeg[]
@@ -127,6 +130,12 @@ function moneyCents(text: string): number | null {
   return Number(dollars) * 100 + Number(cents.padEnd(2, '0'))
 }
 
+// Yes is true, and no or blank is false. Anything else is null.
+function yesOrNo(text: string): boolean | null {
+  const typed = text.toLowerCase()
+  return typed === 'yes' ? true : typed === 'no' || typed === '' ? false : null
+}
+
 function slipResult(text: string): SlipResult | null {
   const typed = text.trim().toLowerCase()
   return typed === 'won' || typed === 'lost' || typed === 'void' ? typed : null
@@ -148,7 +157,7 @@ const ENTRY_WORDS: Partial<Record<EntryProblem, string>> = {
 }
 
 const weekKeyOf = (week: Week) => `${week.competition} ${week.period}`
-const sameLegs = (a: ImportParlay, b: ImportParlay) => a.stakeCents === b.stakeCents && a.boostBps === b.boostBps && a.legs.length === b.legs.length
+const sameLegs = (a: ImportParlay, b: ImportParlay) => a.stakeCents === b.stakeCents && a.boostBps === b.boostBps && a.bonus === b.bonus && a.legs.length === b.legs.length
   && a.legs.every((leg, i) => leg.fixture?.id === b.legs[i].fixture?.id && leg.pick === b.legs[i].pick && leg.odds === b.legs[i].odds)
 
 // ----- The plan -----
@@ -183,12 +192,13 @@ export function planImport(text: string, context: ImportContext): ImportPlan {
     if (parlay === undefined) {
       parlay = {
         number, line: row.line,
-        stakeCents: parseStake(cell('stake')), boostBps: parseBoost(cell('boost')),
+        stakeCents: parseStake(cell('stake')), boostBps: parseBoost(cell('boost')), bonus: yesOrNo(cell('bonus')),
         slipResult: slipResult(cell('result')), slipReturnCents: moneyCents(cell('returned')),
         legs: [], state: null, returnCents: null, problems: [], note: null,
       }
       if (parlay.stakeCents === null) parlay.problems.push('The stake should look like 25.00.')
       if (parlay.boostBps === null) parlay.problems.push('The boost should be a percent like 5, or blank.')
+      if (parlay.bonus === null) parlay.problems.push('Bonus bet should be yes, or blank.')
       if (parlay.slipResult === null) parlay.problems.push('The result should be Won, Lost or Void.')
       if (parlay.slipReturnCents === null) parlay.problems.push('What it returned should look like 81.26, or 0.00.')
       parlays.set(number, parlay)
@@ -197,7 +207,7 @@ export function planImport(text: string, context: ImportContext): ImportPlan {
       // Later rows of a parlay leave its own columns blank, or repeat them.
       const first = firsts.get(number)
       if (PARLAY_COLUMNS.some(column => cell(column) !== '' && cell(column) !== first?.get(column))) {
-        parlay.problems.push(`Line ${row.line} gives this parlay a different stake, boost, result or return.`)
+        parlay.problems.push(`Line ${row.line} gives this parlay a different stake, boost, bonus bet, result or return.`)
       }
     }
     parlay.legs.push(readLeg(row.line, cell, context))
@@ -336,7 +346,7 @@ function readLeg(line: number, cell: (column: Column) => string, context: Import
 // check out, with the reason in the parlay's problems.
 function buildParlay(record: WeekRecord, week: Week, list: readonly Fixture[], parlay: ImportParlay, context: ImportContext): WeekRecord | null {
   const added = addParlay(record, week, list, {
-    stakeCents: parlay.stakeCents ?? 0, boostBps: parlay.boostBps ?? 0,
+    stakeCents: parlay.stakeCents ?? 0, boostBps: parlay.boostBps ?? 0, bonus: parlay.bonus === true,
     legs: parlay.legs.map(leg => ({ fixtureId: leg.fixture?.id ?? 0, pick: leg.pick ?? 'D', odds: leg.odds ?? 0, confidence: leg.confidence ?? 0 })),
   })
   if (!added.ok) {

@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  acceptCorrection, finalScore90, isParlayLocked, parlayOutcome, settleByHand, settleWeek, unsettleLeg, voidLeg,
+  acceptCorrection, cashPayout, cashStake, finalScore90, isParlayLocked, parlayOutcome, settleByHand, settleWeek, unsettleLeg, voidLeg,
   type FixtureScore,
 } from '../src/lib/bets/settle.ts'
 import { isWeekRecord, type Pick, type Settlement, type WeekRecord } from '../src/lib/bets/week-record.ts'
@@ -294,15 +294,15 @@ test('what a parlay pays, worked out by hand', () => {
   const single = parlay(1, [leg(1, { odds: -110, settlement: settled('won') })], { stakeCents: 5000 })
   assert.deepEqual(parlayOutcome(single), { state: 'won', payoutCents: 9545, profitCents: 4545 })
 
-  // $25 on -110, -120 and +105 is exactly $179.375, which rounds down to
-  // $179.37, as bet365 rounds.
+  // $25 on -110, -120 and +105 is exactly $179.375, which rounds up to
+  // $179.38, as bet365 rounds a parlay.
   const three = parlay(1, [-110, -120, 105].map((odds, i) => leg(i + 1, { odds, settlement: settled('won') })))
-  assert.deepEqual(parlayOutcome(three), { state: 'won', payoutCents: 17_937, profitCents: 15_437 })
+  assert.deepEqual(parlayOutcome(three), { state: 'won', payoutCents: 17_938, profitCents: 15_438 })
 
   // A boost is a percent of the profit: 2.5% of the $68.75 profit on the
-  // first parlay is $1.71875, so it returns $95.46.
+  // first parlay is $1.71875, which rounds up to $1.72, so it returns $95.47.
   const boosted = { ...two(settled('won'), settled('won')), boostBps: 250 }
-  assert.deepEqual(parlayOutcome(boosted), { state: 'won', payoutCents: 9546, profitCents: 7046 })
+  assert.deepEqual(parlayOutcome(boosted), { state: 'won', payoutCents: 9547, profitCents: 7047 })
   assert.deepEqual(parlayOutcome({ ...two(settled('won'), settled('lost')), boostBps: 250 }), lost, 'a boost on a lost parlay pays nothing')
   assert.deepEqual(parlayOutcome({ ...two(settled('dropped'), settled('dropped')), boostBps: 250 }), { state: 'void', payoutCents: 2500, profitCents: 0 }, 'nor on a void one')
 })
@@ -318,4 +318,20 @@ test('a parlay locks once every leg in it is settled, whatever the others in its
   assert.deepEqual(locks(all), [true, true], 'a dropped leg counts as settled')
   assert.deepEqual(locks(unsettleLeg(all, uuid(1001))), [false, true], 'taking a settlement away opens only its own parlay')
   assert.equal(isParlayLocked({ ...parlay(3, []), legs: [] }), false, 'a parlay with no legs, which no record can hold, never locks')
+})
+
+test('A bonus bet costs nothing, and pays only its winnings', () => {
+  // $25 of bonus money on +150 and -200: bet365 keeps the stake and pays the
+  // $68.75 winnings.
+  const two = (first: Settlement | null, second: Settlement | null) =>
+    parlay(1, [leg(1, { odds: 150, settlement: first }), leg(2, { odds: -200, settlement: second })], { bonus: true })
+  assert.deepEqual(parlayOutcome(two(settled('won'), settled('won'))), { state: 'won', payoutCents: 6875, profitCents: 6875 }, '$93.75 less the $25 stake')
+  assert.deepEqual(parlayOutcome(two(settled('won'), settled('lost'))), { state: 'lost', payoutCents: 0, profitCents: 0 }, 'losing costs nothing')
+  assert.ok(Object.is(parlayOutcome(two(settled('lost'), null)).profitCents, 0), 'a lost bonus bet is 0, never -0')
+  assert.deepEqual(parlayOutcome(two(settled('dropped'), settled('dropped'))), { state: 'void', payoutCents: 0, profitCents: 0 }, 'it comes back as bonus money')
+  assert.deepEqual(parlayOutcome(two(null, null)), { state: 'pending', payoutCents: null, profitCents: null })
+  // What the pages use.
+  const own = parlay(2, [leg(3)])
+  assert.deepEqual([cashStake(own), cashStake(two(null, null))], [2500, 0])
+  assert.deepEqual([cashPayout(own, 9375), cashPayout(two(null, null), 9375)], [9375, 6875])
 })

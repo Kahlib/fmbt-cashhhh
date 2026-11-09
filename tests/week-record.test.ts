@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   addParlay, byScoreFor, checkWeek, EMPTY_WEEK, isReason, isWeekRecord, MAX_LEGS, MAX_LEGS_PER_PARLAY, MAX_PARLAYS,
-  resultOf, TOMBSTONE, type NewLeg, type NewParlay, type Pick, type Settlement, type Week, type WeekFixture,
+  resultOf, TOMBSTONE, type NewLeg, type NewParlay, type Parlay, type Pick, type Settlement, type Week, type WeekFixture,
   type WeekRecord,
 } from '../src/lib/bets/week-record.ts'
 import { cheapLegs, deepFreeze, KICKOFF, leg, parlay, uuid, weekOf } from './bet-samples.ts'
@@ -390,4 +390,18 @@ test("checking a changed week against that week's fixtures", () => {
   assert.equal(checkWeek(week, { ...WEEK, competition: 'UCL' }, FIXTURES), 'not this week', 'the wrong competition')
   assert.equal(checkWeek(week, { ...WEEK, season: 2025 }, FIXTURES), 'not this week', 'the wrong season')
   assert.equal(checkWeek(withField(['parlays', 0, 'stakeCents'], 0, week) as WeekRecord, WEEK, FIXTURES), 'shape')
+})
+
+test('A bonus bet carries bonus: true, and nothing else stands in for it', () => {
+  // Without the field, a parlay was staked with your own money, as every
+  // record saved before step 11.2 was.
+  assert.ok(isWeekRecord(weekOf(parlay(1, [leg(1)]))))
+  assert.ok(isWeekRecord(weekOf(parlay(1, [leg(1)], { bonus: true }))))
+  for (const value of [false, 'true', 1, null, undefined]) {
+    assert.equal(isWeekRecord(weekOf({ ...parlay(1, [leg(1)]), bonus: value } as unknown as Parlay)), false, `bonus: ${String(value)}`)
+  }
+  // Adding one gives only a bonus bet the field, so each kind has one way to be written.
+  assert.equal(added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, { ...single(), bonus: true })).parlay.bonus, true)
+  assert.equal(Object.hasOwn(added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, { ...single(), bonus: false })).parlay, 'bonus'), false)
+  assert.equal(Object.hasOwn(added(addParlay(EMPTY_WEEK, WEEK, FIXTURES, single())).parlay, 'bonus'), false)
 })

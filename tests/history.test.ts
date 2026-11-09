@@ -125,13 +125,13 @@ test('The CSV formula guard: text that a spreadsheet would run gets an apostroph
 test('The CSV files: one row per parlay or pick, in the order shown', () => {
   const { parlays, picks } = historyRows(SEASON, NO_FIXTURES, 'all')
   const lines = parlaysCsv(sortParlays(parlays, { key: 'week', down: true }), code).split('\r\n')
-  assert.equal(lines[0], '\uFEFFWeek,Competition,Parlay,Legs,Picks,Odds,Stake,Boost (%),Result,Returned,Profit,To return')
-  assert.equal(lines[2], 'Matchweek 5,Premier League,Parlay 2,1,CRY,120,10,0,Still to settle,,,22')
-  assert.equal(lines[4], 'Matchday 1,Champions League,Parlay 2,3,MCI + LIV + CHE,403,25,5,Cashed,130.84,105.84,')
+  assert.equal(lines[0], '\uFEFFWeek,Competition,Parlay,Legs,Picks,Odds,Stake,Bonus bet,Boost (%),Result,Returned,Profit,To return')
+  assert.equal(lines[2], 'Matchweek 5,Premier League,Parlay 2,1,CRY,120,10,,0,Still to settle,,,22')
+  assert.equal(lines[4], 'Matchday 1,Champions League,Parlay 2,3,MCI + LIV + CHE,403,25,,5,Cashed,130.84,105.84,')
   assert.equal(lines.length, 8) // a header, 6 rows, and the last line break
   // A name from the feed that looks like a formula is guarded.
   const hostile = (each: string) => (each === 'ARS' ? '=cmd|"/C calc"!A0' : each)
-  assert.match(parlaysCsv(parlays, hostile), /\r\nMatchweek 1,Premier League,Parlay 1,1,"'=cmd\|""\/C calc""!A0",100,10,0,Cashed,20,10,\r\n/)
+  assert.match(parlaysCsv(parlays, hostile), /\r\nMatchweek 1,Premier League,Parlay 1,1,"'=cmd\|""\/C calc""!A0",100,10,,0,Cashed,20,10,\r\n/)
   const pickLines = picksCsv(picks, code).split('\r\n')
   assert.equal(pickLines[0], '\uFEFFWeek,Competition,Parlay,Kick-off,Game,Pick,Odds,Confidence,Type,Score,Result')
   assert.equal(pickLines[3], 'Matchweek 1,Premier League,Parlay 2,2026-08-15 12:30,TOT v ARS,ARS,150,2,Away favourite,1–1,Lost to a draw')
@@ -146,6 +146,8 @@ test('Parlays against singles: same picks, an equal share of the stake each', ()
     settlement: { outcome: outcomes[i], byScore: outcomes[i], score90: [1, 0], how: 'auto', reason: null, promo: false, settledAt: NOW } })), { stakeCents: 3000 })
   assert.equal(singlesCents(three(['won', 'won', 'won']), 33960), 4133)
   assert.equal(singlesCents(three(['won', 'lost', 'won']), -3000), 2033)
+  // Made with bonus money, the lost single would have cost nothing: $8.33 + $22.00.
+  assert.equal(singlesCents({ ...three(['won', 'lost', 'won']), bonus: true }, 0), 3033)
   // A single keeps its own result, boost and all.
   assert.equal(singlesCents(parlay(8, [leg(30)]), 1234), 1234)
 
@@ -155,11 +157,11 @@ test('Parlays against singles: same picks, an equal share of the stake each', ()
   // each at 1.48, 1.70 and 2.00); −$2.50 (the dropped leg's single is void).
   assert.deepEqual(versus.sizes, [
     { legs: 1, count: 1, parlayCents: 1000, singlesCents: 1000 },
-    { legs: 2, count: 3, parlayCents: -2000 + 4727 - 500, singlesCents: -500 + 1455 - 250 },
+    { legs: 2, count: 3, parlayCents: -2000 + 4728 - 500, singlesCents: -500 + 1455 - 250 },
     { legs: 3, count: 1, parlayCents: 10584, singlesCents: 1817 },
   ])
-  assert.deepEqual({ ...versus, sizes: [] }, { legs: 10, count: 5, parlayCents: 13811, singlesCents: 3522, sizes: [] })
-  assert.deepEqual(versusSentence(versus), ['Parlays are ahead at 2 and 3 legs, by ', { b: '$15.22', tone: 'good' }, ' and ', { b: '$87.67', tone: 'good' }, '.', ' A single is the same bet either way.'])
+  assert.deepEqual({ ...versus, sizes: [] }, { legs: 10, count: 5, parlayCents: 13812, singlesCents: 3522, sizes: [] })
+  assert.deepEqual(versusSentence(versus), ['Parlays are ahead at 2 and 3 legs, by ', { b: '$15.23', tone: 'good' }, ' and ', { b: '$87.67', tone: 'good' }, '.', ' A single is the same bet either way.'])
 })
 
 test('A parlay waits for every leg before it joins parlays against singles', () => {
