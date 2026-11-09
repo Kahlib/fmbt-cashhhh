@@ -29,7 +29,7 @@ export function csvCell(cell: Cell): string {
 // The whole file, with Windows line endings and a byte-order mark first, so
 // Excel reads names like "Atlético" correctly.
 export function toCsv(header: readonly string[], rows: readonly (readonly Cell[])[]): string {
-  return `﻿${[header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n')}\r\n`
+  return `\uFEFF${[header, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n')}\r\n`
 }
 
 // "fmbt-picks-2026-27.csv"

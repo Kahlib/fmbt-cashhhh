@@ -118,14 +118,14 @@ test('The CSV formula guard: text that a spreadsheet would run gets an apostroph
   assert.equal(csvCell(130.84), '130.84')
   assert.equal(csvCell(null), '')
   assert.equal(csvCell(Number.NaN), '')
-  assert.equal(toCsv(['A', 'B'], [[1, '=x']]), "﻿A,B\r\n1,'=x\r\n")
+  assert.equal(toCsv(['A', 'B'], [[1, '=x']]), "\uFEFFA,B\r\n1,'=x\r\n")
   assert.equal(csvName('picks', 2026), 'fmbt-picks-2026-27.csv')
 })
 
 test('The CSV files: one row per parlay or pick, in the order shown', () => {
   const { parlays, picks } = historyRows(SEASON, NO_FIXTURES, 'all')
   const lines = parlaysCsv(sortParlays(parlays, { key: 'week', down: true }), code).split('\r\n')
-  assert.equal(lines[0], '﻿Week,Competition,Parlay,Legs,Picks,Odds,Stake,Boost (%),Result,Returned,Profit,To return')
+  assert.equal(lines[0], '\uFEFFWeek,Competition,Parlay,Legs,Picks,Odds,Stake,Boost (%),Result,Returned,Profit,To return')
   assert.equal(lines[2], 'Matchweek 5,Premier League,Parlay 2,1,CRY,120,10,0,Still to settle,,,22')
   assert.equal(lines[4], 'Matchday 1,Champions League,Parlay 2,3,MCI + LIV + CHE,403,25,5,Cashed,130.84,105.84,')
   assert.equal(lines.length, 8) // a header, 6 rows, and the last line break

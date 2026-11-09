@@ -651,3 +651,22 @@ table.ledger td.none-side { font-size: 12px; color: var(--text-3); }
 table.invites th { font-size: 12px; font-weight: 550; color: var(--text-3); }
 table.invites td:first-child { font-weight: 600; overflow-wrap: anywhere; white-space: normal; }
 table.invites .tag { margin-left: 8px; }
+
+/* ----- step 11.1: Import (the canvas "FMBT Import screens") ----- */
+.tag.good { color: var(--good-t); }
+.week-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.week-h .count { margin-left: auto; }
+.week-note { margin: 0; font-size: 13px; color: var(--text-2); }
+.week-note.bad { color: var(--bad-t); }
+.ip { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--hair); }
+.ip-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; }
+.ip-h b { font-weight: 650; }
+.ip-h .sum { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.ip-h .match-ok { font-size: 12px; color: var(--text-3); }
+.ip-h .cent { font-size: 12px; color: var(--warn-t); }
+table.hist.ileg td { padding-top: 7px; padding-bottom: 7px; }
+table.hist.ileg th { font-size: 12px; font-weight: 550; color: var(--text-3); }
+table.hist.ileg tr.has-problem td, table.hist.ileg tr.has-note td { border-bottom: 0; }
+table.hist.ileg tr.problem td, table.hist.ileg tr.note td { padding-top: 0; font-size: 12px; white-space: normal; }
+table.hist.ileg tr.problem td { color: var(--bad-t); }
+table.hist.ileg tr.note td { color: var(--text-3); }

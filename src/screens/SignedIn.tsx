@@ -123,7 +123,7 @@ export function SignedIn({ api, unlocked, firstPage, firstToast, onSignOut, onNe
   } else if (page === 'analytics') {
     content = <Analytics live={live} snapshot={snapshot} />
   } else if (page === 'settings') {
-    content = <Settings api={api} unlocked={unlocked} toast={firstPage === 'settings' ? firstToast : undefined} onSignOut={onSignOut} onNewKey={onNewKey}
+    content = <Settings api={api} live={live} unlocked={unlocked} toast={firstPage === 'settings' ? firstToast : undefined} onSignOut={onSignOut} onNewKey={onNewKey}
       onWeeksChanged={() => void live.loadAll()} />
   } else if (page === 'build') {
     content = (

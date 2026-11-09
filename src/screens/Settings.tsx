@@ -2,13 +2,14 @@
 // and "Settings: after a key change"), then the audit log and, for app
 // admins, the invite list (step 10.5). The signed-in frame round it is
 // SignedIn's, from step 10.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { AccountApi, Stored, WeekRow } from '../lib/account/api.ts'
 import { backupStatus, planRestore, type Backup, type BackupStatus, type RestorePlan, type RestoreResult } from '../lib/account/backup.ts'
 import type { KeyWrapRow } from '../lib/crypto/keys.ts'
 import { makeNewRecoveryKey, type NewRecoveryKey } from '../lib/account/new-recovery-key.ts'
 import { newestFirst, type Unlocked } from '../lib/account/wraps.ts'
 import { count, daysAgo, formatDay } from '../lib/format.ts'
+import type { LiveData } from '../lib/live.ts'
 import { loadSettings, type SettingsRecord } from '../lib/records/settings.ts'
 import { Button, FileButton, Hint, Note } from '../components/Controls.tsx'
 import { DownloadIcon, UploadIcon } from '../components/Icons.tsx'
@@ -20,6 +21,7 @@ import { backupFileProblem, readBackupFile } from '../components/files.ts'
 import { AuditLog } from './AuditLog.tsx'
 import { BackupSteps } from './BackupSteps.tsx'
 import { ChangePasswordDialog } from './ChangePasswordDialog.tsx'
+import { ImportPanel, ImportPreview, type Planned } from './Import.tsx'
 import { Invites } from './Invites.tsx'
 import { OFFLINE } from './messages.ts'
 import { RestoreDialog } from './RestoreDialog.tsx'
@@ -31,8 +33,9 @@ type Open =
   | { kind: 'restore'; fileName: string; backup: Backup; plan: RestorePlan }
   | null
 
-export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey, onWeeksChanged }: {
+export function Settings({ api, live, unlocked, toast: firstToast, onSignOut, onNewKey, onWeeksChanged }: {
   api: AccountApi
+  live: LiveData                // for the import: this season's fixtures and weeks, and saving
   unlocked: Unlocked
   toast?: string
   onSignOut: () => void
@@ -44,6 +47,9 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
   const [loadProblem, setLoadProblem] = useState(false)
   const [open, setOpen] = useState<Open>(null)
   const [toast, setToast] = useState<string | null>(firstToast ?? null)
+  const snapshot = useSyncExternalStore(live.subscribe, live.snapshot)
+  const [planned, setPlanned] = useState<Planned | null>(null)  // an import's preview, which takes over the page
+  const [imported, setImported] = useState<string | null>(null)
   const [restoreProblem, setRestoreProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState<'restore' | 'new-key' | 'demo' | null>(null)
 
@@ -137,6 +143,19 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
   const lastBackup = loaded?.settings.lastBackupAt ?? null
   const weeks = loaded === null ? 0 : new Set(loaded.weeks.map(w => `${w.season} ${w.competition} ${w.period}`)).size
 
+  if (planned !== null) {
+    return (
+      <>
+        <ImportPreview live={live} snapshot={snapshot} planned={planned} onCancel={() => setPlanned(null)} onDone={summary => {
+          setPlanned(null)
+          setImported(summary)
+          setToast(summary.slice(0, summary.indexOf('.') + 1))
+        }} />
+        {toast !== null && <Toast message={toast} onDone={() => setToast(null)} />}
+      </>
+    )
+  }
+
   return (
     <>
       <PageHead title="Settings" admin={admin} status={`Signed in as ${unlocked.email}. Closing or refreshing this tab signs you out.`}
@@ -195,6 +214,11 @@ export function Settings({ api, unlocked, toast: firstToast, onSignOut, onNewKey
           {restoreProblem !== null ? <Hint tone="bad">{restoreProblem}</Hint>
             : <Hint>Restoring adds anything in the file that's missing here. It never replaces or deletes what's already saved.</Hint>}
         </section>
+
+        <ImportPanel live={live} snapshot={snapshot} done={imported} onPlanned={next => {
+          setPlanned(next)
+          window.scrollTo({ top: 0 })
+        }} />
 
         {/* Opened again whenever the panels above reload, since a restore can add entries. */}
         <AuditLog key={version} api={api} unlocked={unlocked} />

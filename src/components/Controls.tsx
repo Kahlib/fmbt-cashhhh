@@ -154,12 +154,13 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
 
 // A button that opens the computer's file chooser. The file is read in this
 // tab only: nothing is uploaded.
-export function FileButton({ kind = 'secondary', block = false, busy = false, busyLabel, onFile, children }: Omit<ButtonProps, 'onClick' | 'type' | 'disabled'> & { onFile: (file: File) => void }) {
+// Backups are JSON, and the backfill's import is CSV.
+export function FileButton({ kind = 'secondary', block = false, busy = false, busyLabel, onFile, accept = '.json,application/json', children }: Omit<ButtonProps, 'onClick' | 'type' | 'disabled'> & { onFile: (file: File) => void; accept?: string }) {
   const input = useRef<HTMLInputElement>(null)
   return (
     <>
       <input
-        ref={input} type="file" accept=".json,application/json" hidden
+        ref={input} type="file" accept={accept} hidden
         onChange={event => {
           const file = event.target.files?.[0]
           event.target.value = '' // so choosing the same file again still counts
