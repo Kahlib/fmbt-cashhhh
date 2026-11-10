@@ -223,6 +223,49 @@ test("A first load that fails shows that, a failed refresh keeps what's shown, a
   assert.equal(s.live.snapshot().stale, false)
 })
 
+test("Every leg shows its game's codes as they are now, and the next save keeps them", async () => {
+  const s = await start()
+  await s.live.loadAll()
+  assert.equal(await s.live.save(MW11, withParlay(s, EMPTY_WEEK, [[2, 'H', 150]])), 'saved')
+  assert.deepEqual([s.live.week(MW11).record.parlays[0].legs[0].home, versions(s)], ['MCI', 1])
+
+  // Liverpool's code becomes MCI too, so each team makes its own from its
+  // name: Man City MAN, and Liverpool LIV. Loading again shows the saved leg
+  // with them, and saves nothing for that.
+  const liverpool = s.server.state.football.teams.find(team => team.id === 9002)
+  assert.ok(liverpool !== undefined)
+  liverpool.code = 'MCI'
+  await s.live.loadAll()
+  assert.deepEqual([s.live.week(MW11).record.parlays[0].legs[0].home, s.live.week(MW11).record.parlays[0].legs[0].away], ['MAN', 'LIV'])
+  assert.equal(versions(s), 1)
+
+  // The next save keeps the codes the pages showed.
+  assert.equal(await s.live.save(MW11, withParlay(s, s.live.week(MW11).record, [[2, 'A', 200]])), 'saved')
+  const saved = await loadWeek(s.tab, s.account.dataKey, MW11)
+  assert.deepEqual(saved.week.record.parlays.map(each => [each.legs[0].home, each.legs[0].away]), [['MAN', 'LIV'], ['MAN', 'LIV']])
+})
+
+test("A week reloaded after another tab saved first shows the current codes too", async () => {
+  const s = await start()
+  await s.live.loadAll()
+  assert.equal(await s.live.save(MW11, withParlay(s, EMPTY_WEEK, [[2, 'D', 210]])), 'saved')
+  // Another tab loads while Man City is still MCI.
+  const other = new LiveData(await tabOn(s.server, s.account), s.account.dataKey, 2026, () => s.clock.now)
+  await other.loadAll()
+  // Liverpool's code becomes MCI too, and this tab loads again, so it shows MAN.
+  const liverpool = s.server.state.football.teams.find(team => team.id === 9002)
+  assert.ok(liverpool !== undefined)
+  liverpool.code = 'MCI'
+  await s.live.loadAll()
+  // The other tab saves first, with the codes it has.
+  const theirs = addParlay(other.week(MW11).record, MW11, [...other.snapshot().fixtures.values()], entry([[2, 'A', 300]]))
+  assert.ok(theirs.ok)
+  assert.equal(await other.save(MW11, theirs.record), 'saved')
+  // This tab's save is turned down, and the week it reloads shows MAN.
+  assert.equal(await s.live.save(MW11, withParlay(s, s.live.week(MW11).record, [[2, 'H', 150]])), 'taken')
+  assert.deepEqual(s.live.week(MW11).record.parlays.map(each => each.legs[0].home), ['MAN', 'MAN'])
+})
+
 test('Another tab saving first means "taken", and this tab reloads the week', async () => {
   const s = await start()
   await s.live.loadAll()

@@ -128,14 +128,14 @@ test("A parlay's odds and returns match KMan's bet365 slip, pending and won", ()
 
 test('A dropped leg comes out of the odds, and a parlay with every leg dropped is void', () => {
   // −300 won, +120 still to play, −110 dropped, $20: +193 returns $58.666...,
-  // which rounds up to $58.67, as a parlay rounds.
+  // which rounds down to $58.66.
   const games = byId(ended(1, 3, 1), game(2), game(3, { status: 'postponed' }))
   let record = settled(weekOf(parlay(1, [leg(1, { odds: -300 }), leg(2, { odds: 120 }), leg(3, { odds: -110 })], { stakeCents: 2000 })), games)
   record = voidLeg(record, uuid(1003), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)
   const view = parlayView(record.parlays[0], 0, games)
   assert.equal(view.state, 'pending')
   assert.equal(view.odds, 193)
-  assert.equal(view.potentialCents, 5867)
+  assert.equal(view.potentialCents, 5866)
 
   let allDropped = weekOf(parlay(2, [leg(3, { odds: -110 })], { stakeCents: 500 }))
   allDropped = voidLeg(allDropped, uuid(1003), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)

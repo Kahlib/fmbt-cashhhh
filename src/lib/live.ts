@@ -8,7 +8,7 @@
 // job at a time, so a refresh and a save never trip over each other.
 import type { AccountApi } from './account/api.ts'
 import type { Competition, Week, WeekRecord } from './bets/week-record.ts'
-import { EMPTY_WEEK } from './bets/week-record.ts'
+import { EMPTY_WEEK, withGameCodes } from './bets/week-record.ts'
 import type { Correction, Waiting } from './bets/settle.ts'
 import { loadWeek, loadWeeks, newWeek, saveWeek, settleWeeks, visibleWeeks, type LoadedWeek, type WeekWarning } from './bets/weeks.ts'
 import { byId, loadFixtures, loadFixturesBetween, loadSyncStatus, type Fixture, type SyncStatus, type Team } from './fixtures.ts'
@@ -81,6 +81,13 @@ export const weekKey = (week: Week) => `${week.season} ${week.competition} ${wee
 // though its version numbers carry on.
 export function editable(loaded: LoadedWeek): WeekRecord {
   return loaded.record.deleted ? EMPTY_WEEK : loaded.record
+}
+
+// A week with every leg showing its game's codes as they are now
+// (week-record.ts, withGameCodes).
+function withCodes(loaded: LoadedWeek, fixtures: ReadonlyMap<number, Fixture>): LoadedWeek {
+  const record = withGameCodes(loaded.record, fixtures)
+  return record === loaded.record ? loaded : { ...loaded, record }
 }
 
 export type InWeek<T> = T & { week: Week }
@@ -213,15 +220,16 @@ export class LiveData {
   // Puts one week in the list, in place of what was there.
   private put(loaded: LoadedWeek, warning: WeekWarning | null): void {
     const key = weekKey(loaded.week)
-    const weeks = this.state.weeks.filter(each => weekKey(each.week) !== key).concat(loaded)
+    const weeks = this.state.weeks.filter(each => weekKey(each.week) !== key).concat(withCodes(loaded, this.state.fixtures))
       .sort((a, b) => a.week.season - b.week.season || a.week.competition.localeCompare(b.week.competition) || periodIndex(a.week.period) - periodIndex(b.week.period))
     const warnings = this.state.warnings.filter(each => weekKey(each.week) !== key).concat(warning === null ? [] : [warning])
     this.update({ weeks, warnings })
   }
 
   // Settles this season's weeks against `fixtures`, saving any that change,
-  // and shows the result. Weeks from other seasons have no fixtures here, so
-  // they're left alone.
+  // and shows the result, with every leg showing its game's codes as they
+  // are now. Weeks from other seasons have no fixtures here, so they're left
+  // alone.
   private async settle(weeks: LoadedWeek[], fixtures: Map<number, Fixture>, also: Partial<LiveSnapshot>): Promise<void> {
     const ours = visibleWeeks(weeks).filter(loaded => loaded.week.season === this.season)
     const settled = await settleWeeks(this.api, this.dataKey, ours, fixtures, new Date(this.clock()).toISOString())
@@ -231,7 +239,7 @@ export class LiveData {
       phase: 'ready',
       stale: false,
       fixtures,
-      weeks: weeks.map(loaded => after.get(weekKey(loaded.week)) ?? loaded),
+      weeks: weeks.map(loaded => withCodes(after.get(weekKey(loaded.week)) ?? loaded, fixtures)),
       corrections: settled.flatMap(each => each.corrections.map(correction => ({ ...correction, week: each.week.week }))),
       waiting: settled.flatMap(each => each.waiting.map(waiting => ({ ...waiting, week: each.week.week }))),
     })

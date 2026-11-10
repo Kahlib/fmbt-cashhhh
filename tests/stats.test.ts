@@ -30,8 +30,8 @@ const mw1 = settled(weekOf(
 ), [score(1, 2, 0), score(2, 1, 0), score(3, 1, 1)])
 
 // Champions League matchday 1, from Wednesday 16 September: both cash.
-// A $10 double at +200 and −110 returns 10 × 3 × 21/11 = $57.2727..., which
-// rounds up to $57.28, and KMan's slip returns $130.84. +$153.12 for the week.
+// A $10 double at +200 and −110 returns 10 × 3 × 21/11 = $57.27, and KMan's
+// slip returns $130.84. +$153.11 for the week.
 const md1 = settled(weekOf(
   parlay(3, [on(4, 'NEW', 'AVL', '2026-09-16T19:00', 'D', 200, 1), on(5, 'ARS', 'BOU', '2026-09-16T19:00', 'H', -110, 3)], { stakeCents: 1000 }),
   parlay(4, [on(6, 'MCI', 'FUL', '2026-09-17T19:00', 'H', -209, 4), on(7, 'LIV', 'EVE', '2026-09-17T19:00', 'H', -143, 3), on(8, 'CHE', 'SUN', '2026-09-17T21:00', 'H', 100, 2)], { stakeCents: 2500, boostBps: 500 }),
@@ -85,16 +85,15 @@ test('Money: settled parlays only, with the running total, its high point and th
   assert.equal(stats.cashed, 3)
   // $10 + $20 + $10 + $25 + $5 = $70 staked.
   assert.equal(stats.stakedCents, 7000)
-  // +$10.00 − $20.00 + $47.28 + $105.84 − $5.00 = +$138.12. The $47.28 is
-  // $10 on +200 and -110, $57.2727..., which rounds up to $57.28.
-  assert.equal(stats.netCents, 13_812)
-  near(stats.returnOnStake ?? 0, 13_812 / 7000, 'return on stake')
+  // +$10.00 − $20.00 + $47.27 + $105.84 − $5.00 = +$138.11.
+  assert.equal(stats.netCents, 13_811)
+  near(stats.returnOnStake ?? 0, 13_811 / 7000, 'return on stake')
   // In the order played: MW1 (15 Aug), MD1 (16 Sep), MW5 (20 Sep).
-  assert.deepEqual(stats.weeks.map(each => [each.week.period, each.profitCents, each.totalCents]), [['MW1', -1000, -1000], ['MD1', 15_312, 14_312], ['MW5', -500, 13_812]])
+  assert.deepEqual(stats.weeks.map(each => [each.week.period, each.profitCents, each.totalCents]), [['MW1', -1000, -1000], ['MD1', 15_311, 14_311], ['MW5', -500, 13_811]])
   assert.deepEqual(stats.weeks.map(each => [each.won, each.drawn, each.lost, each.cashed, each.counted, each.perfect]), [
     [2, 1, 0, 1, 2, false], [5, 0, 0, 2, 2, true], [0, 0, 1, 0, 1, false],
   ])
-  // Up $143.12 after Matchday 1, and $5.00 given back since.
+  // Up $143.11 after Matchday 1, and $5.00 given back since.
   assert.equal(stats.peak?.week.period, 'MD1')
   assert.equal(stats.worst?.week.period, 'MW1')
 })
@@ -136,7 +135,7 @@ test('Types of pick, parlay sizes and confidence ratings', () => {
   //   Doubles: 2, 3 and 5, one cashed. Break even averages 1 ÷ 3.75, 1 ÷ (3 × 21/11)
   //   and 1 ÷ 4, so (.266667 + .174603 + .25) ÷ 3 = .230423. −$20.00 + $47.27 − $5.00 = +$22.27.
   //   Trebles: parlay 4, needs 1 ÷ 5.032 = .198728, +$105.84.
-  assert.deepEqual(stats.sizes.map(each => [each.legs, each.count, each.cashed, each.profitCents]), [[1, 1, 1, 1000], [2, 3, 1, 2228], [3, 1, 1, 10_584]])
+  assert.deepEqual(stats.sizes.map(each => [each.legs, each.count, each.cashed, each.profitCents]), [[1, 1, 1, 1000], [2, 3, 1, 2227], [3, 1, 1, 10_584]])
   near(stats.sizes[1].hit, 1 / 3, 'doubles hit')
   near(stats.sizes[0].breakEven, 0.5, 'singles break even')
   near(stats.sizes[1].breakEven, (1 / 3.75 + 11 / 63 + 0.25) / 3, 'doubles break even')
@@ -166,7 +165,7 @@ test('One competition at a time', () => {
   assert.deepEqual(pl.weeks.map(each => each.totalCents), [-1000, -1500])
   assert.equal(pl.peak, null) // never above $0
   const ucl = seasonStats(SEASON, 'UCL')
-  assert.deepEqual([ucl.parlays, ucl.cashed, ucl.stakedCents, ucl.netCents], [2, 2, 3500, 15_312])
+  assert.deepEqual([ucl.parlays, ucl.cashed, ucl.stakedCents, ucl.netCents], [2, 2, 3500, 15_311])
   assert.equal(ucl.worst?.week.period, 'MD1')
 })
 
@@ -198,7 +197,7 @@ test('The six achievements, across the whole season', () => {
 
 test("The panels' sentences, from the numbers", () => {
   const stats = seasonStats(SEASON, 'all')
-  assert.deepEqual(heroSentence(stats), ['On $70.00 staked across 5 parlays.', ' You were up $143.12 after Matchday 1 and have given back $5.00 since.'])
+  assert.deepEqual(heroSentence(stats), ['On $70.00 staked across 5 parlays.', ' You were up $143.11 after Matchday 1 and have given back $5.00 since.'])
   assert.deepEqual(heroSentence(seasonStats([], 'all')), ['No parlays have settled yet. This page fills in as they do.'])
   assert.deepEqual(legsSentence(stats), ['You lost 1 leg outright and 1 to draws.'])
   assert.deepEqual(legsSentence({ ...stats, legs: { ...stats.legs, drawn: 3, lost: 2 } }), ['Draws cost you ', { b: '3 legs', tone: 'warn' }, ". That's more than you lost outright (2)."])
@@ -289,9 +288,9 @@ test("A bonus bet's stake isn't money staked, and a win still counts its winning
   const bonus = (record: WeekRecord, index: number): WeekRecord => ({ ...record, parlays: record.parlays.map((each, i) => (i === index ? { ...each, bonus: true as const } : each)) })
   const stats = seasonStats([{ week: MW1, record: bonus(mw1, 1) }, { week: MW5, record: mw5 }, { week: MD1, record: bonus(md1, 0) }], 'all')
   // $70 less the two bonus stakes is $40. The lost one costs nothing, so the
-  // net is $20 better, and the cashed one's $47.28 profit was all winnings anyway.
-  assert.deepEqual([stats.parlays, stats.bonusBets, stats.stakedCents, stats.netCents], [5, 2, 4000, 15_812])
-  assert.deepEqual(stats.weeks.map(each => [each.week.period, each.profitCents]), [['MW1', 1000], ['MD1', 15_312], ['MW5', -500]])
+  // net is $20 better, and the cashed one's $47.27 profit was all winnings anyway.
+  assert.deepEqual([stats.parlays, stats.bonusBets, stats.stakedCents, stats.netCents], [5, 2, 4000, 15_811])
+  assert.deepEqual(stats.weeks.map(each => [each.week.period, each.profitCents]), [['MW1', 1000], ['MD1', 15_311], ['MW5', -500]])
   assert.equal(heroSentence(stats)[0], 'On $40.00 staked across 3 parlays, plus 2 bonus bets.')
   // What the odds expected moves by each bonus stake times its chance of
   // losing, since a bonus bet's stake was never yours to lose.

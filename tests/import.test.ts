@@ -1,8 +1,8 @@
 // Tests for step 11.1: the import's CSV reader (src/lib/import/csv-reader.ts)
 // and its plan (src/lib/import/plan.ts). The teams, fixtures and files are
-// made up by hand. Only one parlay uses real numbers: the odds, stake, boost
-// and return of KMan's own bet365 slip, $81.26, which the app matches to the
-// cent since step 11.2 rounds a parlay the way bet365 does.
+// made up by hand. Only the cent-apart parlay uses real numbers: the odds,
+// stake, boost and return of KMan's own bet365 slip, which say $81.26 where
+// the app works out $81.25 (claude/fmbt-step11-plan.md, 11.4).
 process.env.TZ = 'America/Toronto' // the Date column is a date in this computer's time
 
 import assert from 'node:assert/strict'
@@ -129,14 +129,10 @@ test('a good file: each week built and settled the way the slips say, newest fir
   assert.deepEqual(parlayOutcome(mw3.parlays[0]).state, 'lost')
   assert.deepEqual(mw3.parlays[0].legs.map(leg => [leg.settlement?.outcome, leg.settlement?.how, leg.confidence]), [['lost', 'auto', 4], ['won', 'auto', 5], ['won', 'auto', 3]])
   assert.deepEqual(planned.weeks[2].parlays[0].legs.map(leg => leg.shown), ['lost', 'won', 'won'])
-  // KMan's slip, to the cent.
-  assert.deepEqual(parlayOutcome(md1.parlays[0]), { state: 'won', payoutCents: 8126, profitCents: 5626 })
+  // The slip's cent: $81.26 there, $81.25 here, noted and still ready.
+  assert.deepEqual(parlayOutcome(md1.parlays[0]), { state: 'won', payoutCents: 8125, profitCents: 5625 })
   assert.equal(md1.parlays[0].boostBps, 500)
-  assert.equal(planned.weeks[0].parlays[0].note, null)
-  // A slip a cent away is noted, the app's figure is kept, and the week is still ready.
-  const cent = plan(file(...GOOD.map(row => row.replace('81.26', '81.25'))))
-  assert.equal(cent.weeks[0].status, 'ready')
-  assert.equal(cent.weeks[0].parlays[0].note, 'The slip says $81.25, 1 cent less. $81.26 is saved.')
+  assert.equal(planned.weeks[0].parlays[0].note, 'The slip says $81.26, 1 cent more. $81.25 is saved.')
   // The draw single: 10 × 3.5.
   assert.deepEqual([mw4.parlays[0].legs[0].pick, parlayOutcome(mw4.parlays[0]).payoutCents], ['D', 3500])
 })

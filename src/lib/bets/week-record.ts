@@ -254,6 +254,24 @@ export function addParlay(
   return isWeekRecord(next) ? { ok: true, record: next, parlay } : fail('bad fixture')
 }
 
+// Each leg keeps its teams' codes from when it was saved, but a code can
+// change, as when two teams shared one (fixtures.ts, withUniqueCodes). So
+// the pages show every leg with its game's codes as they are now. Only the
+// copy in memory changes, until the week is next saved. A leg whose game
+// isn't in `fixtures` keeps the codes it has, and with nothing to change,
+// the same record comes back.
+export function withGameCodes(record: WeekRecord, fixtures: ReadonlyMap<number, { home: string; away: string }>): WeekRecord {
+  const current = (leg: Leg): Leg => {
+    const game = fixtures.get(leg.fixtureId)
+    return game === undefined || (game.home === leg.home && game.away === leg.away) ? leg : { ...leg, home: game.home, away: game.away }
+  }
+  const parlays = record.parlays.map(parlay => {
+    const legs = parlay.legs.map(current)
+    return legs.every((leg, i) => leg === parlay.legs[i]) ? parlay : { ...parlay, legs }
+  })
+  return parlays.every((parlay, i) => parlay === record.parlays[i]) ? record : { ...record, parlays }
+}
+
 // Checks a whole changed record, as an Admin-mode edit makes: its shape, and
 // every leg's game among this week's fixtures. Null means it's fine.
 export function checkWeek(record: WeekRecord, week: Week, fixtures: readonly WeekFixture[]): 'shape' | 'not this week' | null {

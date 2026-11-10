@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   addParlay, byScoreFor, checkWeek, EMPTY_WEEK, isReason, isWeekRecord, MAX_LEGS, MAX_LEGS_PER_PARLAY, MAX_PARLAYS,
-  resultOf, TOMBSTONE, type NewLeg, type NewParlay, type Parlay, type Pick, type Settlement, type Week, type WeekFixture,
+  resultOf, TOMBSTONE, withGameCodes, type NewLeg, type NewParlay, type Parlay, type Pick, type Settlement, type Week, type WeekFixture,
   type WeekRecord,
 } from '../src/lib/bets/week-record.ts'
 import { cheapLegs, deepFreeze, KICKOFF, leg, parlay, uuid, weekOf } from './bet-samples.ts'
@@ -306,6 +306,21 @@ function problemWith(entry: NewParlay, record: WeekRecord = EMPTY_WEEK, fixtures
   const result = addParlay(deepFreeze(structuredClone(record)), WEEK, fixtures, deepFreeze(structuredClone(entry)))
   return result.ok ? 'added' : result.problem
 }
+
+test("each leg shows its game's codes as they are now, and nothing else changes", () => {
+  const record = deepFreeze(weekOf(parlay(1, [leg(1), leg(2)]), parlay(2, [leg(3)])))
+  // Game 1's home team has a new code. Game 3 is the same, and game 2 isn't in the list.
+  const fixtures = new Map([[900_001, { home: 'MCX', away: 'LIV' }], [900_003, { home: 'MCI', away: 'LIV' }]])
+  const current = withGameCodes(record, fixtures)
+  assert.deepEqual(current, weekOf(parlay(1, [leg(1, { home: 'MCX' }), leg(2)]), parlay(2, [leg(3)])))
+  assert.ok(isWeekRecord(current))
+  assert.equal(current.parlays[1], record.parlays[1], 'an unchanged parlay is the same object')
+  // An away team's new code counts too.
+  assert.deepEqual(withGameCodes(record, new Map([[900_003, { home: 'MCI', away: 'LIX' }]])).parlays[1], parlay(2, [leg(3, { away: 'LIX' })]))
+  // With nothing to change, it's the same record back.
+  assert.equal(withGameCodes(record, new Map([[900_003, { home: 'MCI', away: 'LIV' }]])), record)
+  assert.equal(withGameCodes(record, new Map()), record)
+})
 
 test("adding a parlay copies each game's teams and kick-off, and changes nothing it was given", () => {
   const before = deepFreeze(structuredClone(EMPTY_WEEK))

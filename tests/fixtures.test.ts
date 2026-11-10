@@ -6,7 +6,7 @@ import { ServerError, type AccountApi, type FixtureRow } from '../src/lib/accoun
 import { fromDatabaseTime, isFixtureRow, isSyncStatusRow, isTeamRow } from '../src/lib/account/rows.ts'
 import { settleWeek } from '../src/lib/bets/settle.ts'
 import { addParlay, EMPTY_WEEK } from '../src/lib/bets/week-record.ts'
-import { byId, loadFixtures, loadSyncStatus } from '../src/lib/fixtures.ts'
+import { byId, loadFixtures, loadSyncStatus, withUniqueCodes, type Team } from '../src/lib/fixtures.ts'
 import { finished, fixtureRow, quickAccount, tabOn, TEAM_ROWS } from './bet-samples.ts'
 import { FakeServer } from './fake-api.ts'
 
@@ -49,6 +49,39 @@ test("a fixture whose team is missing, or from another season, means the answers
   })
   server.state.football.teams = structuredClone(TEAM_ROWS)
   await assert.rejects(loadFixtures(wrongSeason, 2026), ServerError)
+})
+
+test('teams that share a code each get their own, made from their names', async () => {
+  const team = (id: number, name: string, shortName: string, code: string): Team => ({ id, name, shortName, code })
+  const bayern = team(9010, 'FC Bayern München', 'Bayern', 'FCB')
+  const barca = team(9011, 'FC Barcelona', 'Barça', 'FCB')
+  const spurs = team(9005, 'Tottenham Hotspur FC', 'Spurs', 'TOT')
+  const codes = (teams: Map<number, Team>) => [...teams.values()].map(each => [each.id, each.code])
+  assert.deepEqual(codes(withUniqueCodes(new Map([[9010, bayern], [9011, barca], [9005, spurs]]))), [[9010, 'BAY'], [9011, 'BAR'], [9005, 'TOT']])
+  // Two names that make the same code first: the lower ID gets it, whatever
+  // order the teams come in, and the other team makes its next one.
+  const united = team(9020, 'Manchester United FC', 'Man United', 'MUN')
+  const city = team(9021, 'Manchester City FC', 'Man City', 'MUN')
+  assert.deepEqual(codes(withUniqueCodes(new Map([[9021, city], [9020, united]]))), [[9021, 'MAC'], [9020, 'MAN']])
+  // A code another team already has is skipped: with BAR taken, Barça makes BAA.
+  const barnsley = team(9012, 'Barnsley FC', 'Barnsley', 'BAR')
+  assert.deepEqual(codes(withUniqueCodes(new Map([[9010, bayern], [9011, barca], [9012, barnsley]]))), [[9010, 'BAY'], [9011, 'BAA'], [9012, 'BAR']])
+  // A team whose own name makes the shared code keeps it.
+  const arsenal = team(9003, 'Arsenal FC', 'Arsenal', 'ARS')
+  const chelsea = team(9004, 'Chelsea FC', 'Chelsea', 'ARS')
+  assert.deepEqual(codes(withUniqueCodes(new Map([[9003, arsenal], [9004, chelsea]]))), [[9003, 'ARS'], [9004, 'CHE']])
+  // With no code shared, nothing changes.
+  assert.deepEqual(withUniqueCodes(new Map([[9005, spurs], [9003, arsenal]])), new Map([[9005, spurs], [9003, arsenal]]))
+
+  // Loading gives the teams and their games the new codes.
+  const { server, tab } = await start([fixtureRow(1, { home_team_id: 9010, away_team_id: 9011 })])
+  server.state.football.teams.push(
+    { id: 9010, name: 'FC Bayern München', short_name: 'Bayern', code: 'FCB' },
+    { id: 9011, name: 'FC Barcelona', short_name: 'Barça', code: 'FCB' },
+  )
+  const { fixtures, teams } = await loadFixtures(tab, 2026)
+  assert.deepEqual([fixtures[0]?.home, fixtures[0]?.away], ['BAY', 'BAR'])
+  assert.deepEqual([teams.get(9010)?.code, teams.get(9011)?.code, teams.get(9001)?.code], ['BAY', 'BAR', 'MCI'])
 })
 
 test("the sync status, with its times in the record's form", async () => {

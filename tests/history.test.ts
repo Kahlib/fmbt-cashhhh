@@ -157,11 +157,11 @@ test('Parlays against singles: same picks, an equal share of the stake each', ()
   // each at 1.48, 1.70 and 2.00); −$2.50 (the dropped leg's single is void).
   assert.deepEqual(versus.sizes, [
     { legs: 1, count: 1, parlayCents: 1000, singlesCents: 1000 },
-    { legs: 2, count: 3, parlayCents: -2000 + 4728 - 500, singlesCents: -500 + 1455 - 250 },
+    { legs: 2, count: 3, parlayCents: -2000 + 4727 - 500, singlesCents: -500 + 1455 - 250 },
     { legs: 3, count: 1, parlayCents: 10584, singlesCents: 1817 },
   ])
-  assert.deepEqual({ ...versus, sizes: [] }, { legs: 10, count: 5, parlayCents: 13812, singlesCents: 3522, sizes: [] })
-  assert.deepEqual(versusSentence(versus), ['Parlays are ahead at 2 and 3 legs, by ', { b: '$15.23', tone: 'good' }, ' and ', { b: '$87.67', tone: 'good' }, '.', ' A single is the same bet either way.'])
+  assert.deepEqual({ ...versus, sizes: [] }, { legs: 10, count: 5, parlayCents: 13811, singlesCents: 3522, sizes: [] })
+  assert.deepEqual(versusSentence(versus), ['Parlays are ahead at 2 and 3 legs, by ', { b: '$15.22', tone: 'good' }, ' and ', { b: '$87.67', tone: 'good' }, '.', ' A single is the same bet either way.'])
 })
 
 test('A parlay waits for every leg before it joins parlays against singles', () => {

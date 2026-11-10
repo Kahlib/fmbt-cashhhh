@@ -27,10 +27,49 @@ export type LoadedFixtures = { fixtures: Fixture[]; teams: Map<number, Team> }
 
 // Every team, and every fixture of one season in both competitions.
 export async function loadFixtures(api: AccountApi, season: number): Promise<LoadedFixtures> {
-  const teams = new Map<number, Team>()
-  for (const row of await api.teams()) teams.set(row.id, { id: row.id, name: row.name, shortName: row.short_name, code: row.code })
+  const read = new Map<number, Team>()
+  for (const row of await api.teams()) read.set(row.id, { id: row.id, name: row.name, shortName: row.short_name, code: row.code })
+  const teams = withUniqueCodes(read)
   const fixtures = (await api.fixtures(season)).map(row => toFixture(row, teams, season))
   return { fixtures, teams }
+}
+
+// football-data gives a few teams the same three-letter code: Barcelona and
+// Bayern are both FCB. The app tells teams apart by their codes, so each
+// team that shares one gets its own instead, made from its name the way the
+// sync makes a code for a team without one: Bayern becomes BAY, and
+// Barcelona BAR (step 11 plan, 11.4). A code only one team has stays as it
+// is, and the database keeps football-data's codes.
+export function withUniqueCodes(teams: ReadonlyMap<number, Team>): Map<number, Team> {
+  const count = new Map<string, number>()
+  for (const team of teams.values()) count.set(team.code, (count.get(team.code) ?? 0) + 1)
+  const taken = new Set([...count].filter(([, teamsWithIt]) => teamsWithIt === 1).map(([code]) => code))
+  const result = new Map(teams)
+  // In order of football-data's ID, so every tab gives each team the same code.
+  const sharing = [...teams.values()].filter(team => (count.get(team.code) ?? 0) > 1).sort((a, b) => a.id - b.id)
+  for (const team of sharing) {
+    const code = madeCodes(team).find(each => !taken.has(each))
+    // No real pair of names comes near running out of codes. If one ever
+    // did, the team would keep the code it shares.
+    if (code === undefined) continue
+    taken.add(code)
+    result.set(team.id, { ...team, code })
+  }
+  return result
+}
+
+// The codes a team's names can make, best first: from its short name, then
+// its full name, the first letter from A to Z with any two that come after
+// it, in order. "Bayern" makes BAY, then BAE, BAR and so on.
+function madeCodes(team: Team): string[] {
+  const codes: string[] = []
+  for (const name of [team.shortName, team.name]) {
+    const letters = name.toUpperCase().replace(/[^A-Z]/g, '')
+    for (let second = 1; second < letters.length; second++) {
+      for (let third = second + 1; third < letters.length; third++) codes.push(letters[0] + letters[second] + letters[third])
+    }
+  }
+  return codes
 }
 
 // The season's fixtures kicking off from `from` up to, but not including,
