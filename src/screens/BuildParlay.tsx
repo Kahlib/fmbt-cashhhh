@@ -261,8 +261,8 @@ export function BuildParlay({ live, snapshot, slip, onSlip, onDone, onCancel }: 
 
   return (
     <>
-      <PageHead title={title} admin={admin} status={status}
-        right={<>{competitionSwitch}<Button onClick={onCancel}>Back to My parlays</Button></>} />
+      <PageHead title={title} admin={admin} status={status} right={competitionSwitch}
+        back={{ label: 'Back to My parlays', onClick: onCancel }} />
       <div className="grid">
         <section className="panel span-7" aria-labelledby="games-title">
           <div className="ph-row">

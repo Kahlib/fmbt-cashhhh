@@ -3,10 +3,10 @@
 // text goes through React, which escapes it (fmbt-security, section 8).
 import type { ReactNode } from 'react'
 import type { Correction } from '../lib/bets/settle.ts'
-import { legState, type LegState, type ParlayView } from '../lib/bets/view.ts'
+import { legState, legWords, parlayMeta, type LegState, type ParlayView } from '../lib/bets/view.ts'
 import type { Leg, Pick as Choice } from '../lib/bets/week-record.ts'
 import type { Fixture } from '../lib/fixtures.ts'
-import { count, dayAndTime, money, oddsText, percentText, signedMoney } from '../lib/format.ts'
+import { dayAndTime, money, oddsText, signedMoney } from '../lib/format.ts'
 import { LockIcon, OpenLockIcon, StatusIcon } from './Icons.tsx'
 import { nameOf, type Names } from '../lib/names.ts'
 
@@ -40,43 +40,7 @@ const WAITING_WORDS = new Map([
 
 // How a leg stands, in words, with an icon where it's settled.
 export function LegResult({ state, reason }: { state: LegState; reason: string | null }) {
-  let tone = 'none'
-  let icon: 'good' | 'bad' | 'warn' | null = null
-  let text = ''
-  let note: string | null = null
-  switch (state.kind) {
-    case 'won':
-      tone = 'good'
-      icon = 'good'
-      text = state.how === 'promo' ? 'Paid by a promo' : state.how === 'hand' ? 'Won, settled by hand' : 'Won'
-      note = state.how === 'score' ? null : reason
-      break
-    case 'lost':
-      tone = state.draw ? 'warn' : 'bad'
-      icon = state.draw ? 'warn' : 'bad'
-      text = state.how === 'void' ? 'Counted as lost' : state.draw ? 'Lost to a draw' : state.how === 'hand' ? 'Lost, settled by hand' : 'Lost'
-      note = state.how === 'score' ? null : reason
-      break
-    case 'dropped':
-      text = 'Dropped'
-      note = reason
-      break
-    case 'final':
-      text = 'Finished, settling now'
-      break
-    case 'live':
-      tone = state.standing === 'on track' ? 'good' : state.standing === 'level' ? 'warn' : 'bad'
-      text = state.standing === 'on track' ? 'On track' : state.standing === 'level' ? 'Level' : 'Behind'
-      note = state.standing === 'level' ? 'A draw would lose this leg' : null
-      break
-    case 'not started':
-      text = 'Not started'
-      break
-    case 'waiting':
-      tone = 'you'
-      text = 'Waiting for you'
-      break
-  }
+  const { tone, icon, text, note } = legWords(state, reason)
   return (
     <span className="state">
       <span className={`st ${tone}`}>{icon !== null && <StatusIcon kind={icon} />}{text}</span>
@@ -151,7 +115,7 @@ export function LegsTable({ legs, fixtures, names, actions }: {
 }
 
 // The money at the top right of a parlay.
-function Payout({ view }: { view: ParlayView }) {
+export function Payout({ view }: { view: ParlayView }) {
   const parlay = view.parlay
   const legs = parlay.legs.length
   let label: string
@@ -204,9 +168,6 @@ export function ParlayCard({ view, fixtures, names, actions, admin, onEdit, onRe
   const parlay = view.parlay
   const legs = parlay.legs.length
   const titleId = `parlay-${parlay.id}`
-  const odds = view.odds === null ? 'every leg dropped' : `at ${oddsText(view.odds)}`
-  const boost = parlay.boostBps > 0 ? `, ${percentText(parlay.boostBps)} boost` : ''
-  const dropped = parlay.legs.filter(leg => leg.settlement?.outcome === 'dropped').length
   return (
     <section className="panel parlay" aria-labelledby={titleId}>
       <div className="parlay-h">
@@ -218,7 +179,7 @@ export function ParlayCard({ view, fixtures, names, actions, admin, onEdit, onRe
             {legs === 1 && <span className="tag">Single</span>}
             {parlay.bonus === true && <span className="tag">Bonus bet</span>}
           </div>
-          <p className="parlay-meta">{count(legs, 'leg', 'legs')}{dropped > 0 && view.odds !== null ? `, ${dropped} dropped,` : ''} {odds}, {money(parlay.stakeCents)} {parlay.bonus === true ? 'bonus bet' : 'staked'}{boost}</p>
+          <p className="parlay-meta">{parlayMeta(view)}</p>
         </div>
         <Payout view={view} />
       </div>

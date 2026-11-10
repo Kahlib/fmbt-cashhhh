@@ -6,7 +6,7 @@ import { clockTime, count, dayAndTime, formatDay, money, oddsText, percentText }
 import type { AuditEntry, AuditProblem, Change, ChangeValue } from './audit.ts'
 import { boostCents, combinedOdds, payoutCents } from './odds.ts'
 import { cashPayout, cashStake, finalScore90, isParlayLocked, parlayOutcome, type ParlayState } from './settle.ts'
-import { byScoreFor, type Leg, type Parlay, type Pick, type WeekRecord } from './week-record.ts'
+import { byScoreFor, type Competition, type Leg, type Parlay, type Pick, type Week, type WeekRecord } from './week-record.ts'
 
 export type WaitingStatus = 'postponed' | 'cancelled' | 'suspended' | 'awarded' | 'missing'
 const WAITING = new Set<string>(['postponed', 'cancelled', 'suspended', 'awarded'])
@@ -99,6 +99,82 @@ export function parlayView(parlay: Parlay, index: number, fixtures: ReadonlyMap<
     onlyLossWasADraw: lost.length === 1 && lost[0].kind === 'lost' && lost[0].draw,
     live: states.some(state => state.kind === 'live'),
   }
+}
+
+// How a leg stands, in words: its tone, an icon where it's settled, and a
+// note to go under it, where there is one.
+export function legWords(state: LegState, reason: string | null): { tone: string; icon: 'good' | 'bad' | 'warn' | null; text: string; note: string | null } {
+  let tone = 'none'
+  let icon: 'good' | 'bad' | 'warn' | null = null
+  let text = ''
+  let note: string | null = null
+  switch (state.kind) {
+    case 'won':
+      tone = 'good'
+      icon = 'good'
+      text = state.how === 'promo' ? 'Paid by a promo' : state.how === 'hand' ? 'Won, settled by hand' : 'Won'
+      note = state.how === 'score' ? null : reason
+      break
+    case 'lost':
+      tone = state.draw ? 'warn' : 'bad'
+      icon = state.draw ? 'warn' : 'bad'
+      text = state.how === 'void' ? 'Counted as lost' : state.draw ? 'Lost to a draw' : state.how === 'hand' ? 'Lost, settled by hand' : 'Lost'
+      note = state.how === 'score' ? null : reason
+      break
+    case 'dropped':
+      text = 'Dropped'
+      note = reason
+      break
+    case 'final':
+      text = 'Finished, settling now'
+      break
+    case 'live':
+      tone = state.standing === 'on track' ? 'good' : state.standing === 'level' ? 'warn' : 'bad'
+      text = state.standing === 'on track' ? 'On track' : state.standing === 'level' ? 'Level' : 'Behind'
+      note = state.standing === 'level' ? 'A draw would lose this leg' : null
+      break
+    case 'not started':
+      text = 'Not started'
+      break
+    case 'waiting':
+      tone = 'you'
+      text = 'Waiting for you'
+      break
+  }
+  return { tone, icon, text, note }
+}
+
+// The line under a parlay's title: "3 legs, 1 dropped, at +193, $20.00
+// staked, 5% boost", or "$20.00 bonus bet" for a bonus bet.
+export function parlayMeta(view: ParlayView): string {
+  const parlay = view.parlay
+  const odds = view.odds === null ? 'every leg dropped' : `at ${oddsText(view.odds)}`
+  const boost = parlay.boostBps > 0 ? `, ${percentText(parlay.boostBps)} boost` : ''
+  const dropped = parlay.legs.filter(leg => leg.settlement?.outcome === 'dropped').length
+  return `${count(parlay.legs.length, 'leg', 'legs')}${dropped > 0 && view.odds !== null ? `, ${dropped} dropped,` : ''} ${odds}, ${money(parlay.stakeCents)} ${parlay.bonus === true ? 'bonus bet' : 'staked'}${boost}`
+}
+
+// A parlay that can still cash, for the Dashboard's Still to settle, with
+// its legs in kick-off order (step 11 plan, 11.5).
+export type OpenParlay = { week: Week; view: ParlayView; legs: Leg[] }
+
+// Every parlay still to settle, in one competition or both: the ones being
+// played first, then by the next of their legs to kick off. A parlay that
+// has lost a leg has already settled, so it isn't one.
+export function openParlays(
+  weeks: readonly { week: Week; record: WeekRecord }[], fixtures: ReadonlyMap<number, Fixture>, competition: Competition | 'all',
+): OpenParlay[] {
+  const open: OpenParlay[] = []
+  for (const { week, record } of weeks) {
+    if (competition !== 'all' && week.competition !== competition) continue
+    record.parlays.forEach((parlay, index) => {
+      const view = parlayView(parlay, index, fixtures)
+      if (view.state === 'pending') open.push({ week, view, legs: [...parlay.legs].sort((a, b) => a.kickoff.localeCompare(b.kickoff)) })
+    })
+  }
+  // A pending parlay always has a leg still to play.
+  const next = (each: OpenParlay) => each.legs.find(leg => leg.settlement === null)?.kickoff ?? ''
+  return open.sort((a, b) => Number(b.view.live) - Number(a.view.live) || next(a).localeCompare(next(b)))
 }
 
 export type WeekSummary = {

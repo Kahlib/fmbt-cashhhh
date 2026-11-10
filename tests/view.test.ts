@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { lockedChanges } from '../src/lib/bets/audit.ts'
 import { settleByHand, settleWeek, voidLeg, type FixtureScore } from '../src/lib/bets/settle.ts'
-import { changeWords, legPlace, legState, parlayView, standing, weekSentence, weekSummary, type LegState } from '../src/lib/bets/view.ts'
+import { changeWords, legPlace, legState, openParlays, parlayMeta, parlayView, standing, weekSentence, weekSummary, type LegState } from '../src/lib/bets/view.ts'
 import type { Leg, WeekRecord } from '../src/lib/bets/week-record.ts'
 import type { Fixture } from '../src/lib/fixtures.ts'
 import { leg, parlay, uuid, weekOf } from './bet-samples.ts'
@@ -136,6 +136,7 @@ test('A dropped leg comes out of the odds, and a parlay with every leg dropped i
   assert.equal(view.state, 'pending')
   assert.equal(view.odds, 193)
   assert.equal(view.potentialCents, 5866)
+  assert.equal(parlayMeta(view), '3 legs, 1 dropped, at +193, $20.00 staked')
 
   let allDropped = weekOf(parlay(2, [leg(3, { odds: -110 })], { stakeCents: 500 }))
   allDropped = voidLeg(allDropped, uuid(1003), { outcome: 'dropped', reason: 'The match was postponed. bet365 voided the leg.' }, games, NOW)
@@ -243,9 +244,50 @@ test("Bonus bets: a parlay's view, a week's totals and the audit log's words", (
   ), games)
   // Its winnings if the +120 lands: 20 × 2 × 2.2 is $88.00, less the $20 stake.
   assert.equal(parlayView(record.parlays[0], 0, games).potentialCents, 6800)
+  assert.equal(parlayMeta(parlayView({ ...record.parlays[0], boostBps: 500 }, 0, games)), '2 legs at +340, $20.00 bonus bet, 5% boost')
   // Only the $5 is your money staked, the lost bonus bet costs nothing, and the $5 single returns $10.
   const summary = weekSummary(record, games)
   assert.deepEqual([summary.parlays, summary.bonusBets, summary.stakedCents, summary.returnedCents, summary.netCents], [3, 2, 500, 1000, 500])
   assert.equal(changeWords({ what: 'Parlay 2 · bonus bet', from: false, to: true }), 'Parlay 2: made a bonus bet')
   assert.equal(changeWords({ what: 'Parlay 2 · bonus bet', from: true, to: false }), 'Parlay 2: no longer a bonus bet')
+})
+
+test('Still to settle: parlays that can still cash, live ones first, then by the next kick-off', () => {
+  const games = byId(
+    ended(1, 2, 0, { kickoff: '2026-11-21T15:00:00.000Z' }),
+    game(2, { kickoff: '2026-11-23T20:00:00.000Z' }),
+    game(3, { status: 'live', minute: 67, home_90: 1, away_90: 1, kickoff: '2026-11-22T15:00:00.000Z' }),
+    game(4, { kickoff: '2026-11-24T20:00:00.000Z' }),
+    game(5, { competition: 'UCL', period: 'MD5', kickoff: '2026-11-25T20:00:00.000Z' }),
+    game(6, { kickoff: '2026-11-22T17:30:00.000Z' }),
+    game(7, { status: 'postponed', kickoff: '2026-11-21T12:30:00.000Z' }),
+  )
+  const at = (n: number) => games.get(900_000 + n)?.kickoff ?? ''
+  const mw12 = settled(weekOf(
+    // Its legs saved the other way round: the one still to play, then the one that won.
+    parlay(1, [leg(2, { kickoff: at(2) }), leg(1, { kickoff: at(1) })]),
+    parlay(2, [leg(3, { kickoff: at(3) })]),
+    // Lost on game 1 already, so it has settled.
+    parlay(3, [leg(11, { fixtureId: 900_001, pick: 'A', kickoff: at(1) }), leg(4, { kickoff: at(4) })]),
+    // Won.
+    parlay(4, [leg(12, { fixtureId: 900_001, kickoff: at(1) })]),
+    // Its only leg kicks off after parlay 1's first, but before parlay 1's next.
+    parlay(6, [leg(6, { kickoff: at(6) })]),
+    // Postponed, so its leg is older than the one being played, but comes after it.
+    parlay(7, [leg(7, { kickoff: at(7) })]),
+  ), games)
+  const md5 = weekOf(parlay(5, [leg(5, { kickoff: at(5) })]))
+  const weeks = [
+    { week: { season: 2026, competition: 'PL' as const, period: 'MW12' }, record: mw12 },
+    { week: { season: 2026, competition: 'UCL' as const, period: 'MD5' }, record: md5 },
+  ]
+  const open = openParlays(weeks, games, 'all')
+  assert.deepEqual(open.map(each => [each.week.period, each.view.number, each.view.live]), [['MW12', 2, true], ['MW12', 6, false], ['MW12', 5, false], ['MW12', 1, false], ['MD5', 1, false]])
+  // A parlay's legs come in kick-off order, so the one that won is first.
+  assert.deepEqual(open[3].legs.map(each => [each.fixtureId, each.settlement?.outcome ?? null]), [[900_001, 'won'], [900_002, null]])
+  assert.equal(parlayMeta(open[3].view), '2 legs at +525, $25.00 staked')
+  // One competition at a time.
+  assert.deepEqual(openParlays(weeks, games, 'UCL').map(each => each.week.period), ['MD5'])
+  assert.deepEqual(openParlays(weeks, games, 'PL').map(each => each.view.number), [2, 6, 5, 1])
+  assert.deepEqual(openParlays([], games, 'all'), [])
 })

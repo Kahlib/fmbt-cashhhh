@@ -212,6 +212,10 @@ textarea.input { resize: none; line-height: 1.6; }
 .btn-danger[disabled] { opacity: .4; cursor: not-allowed; }
 .segmented button[disabled] { opacity: .4; cursor: not-allowed; }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* the way back, above a screen's title, where people look for it */
+.back-btn { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 12px; padding: 6px 12px 6px 8px; border: 1px solid var(--hair-2); border-radius: var(--r-box); background: rgba(255,255,255,.05); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.back-btn:hover { background: rgba(255,255,255,.09); border-color: var(--text-3); }
+.back-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .topbar-r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* sidebar: pages, Admin mode and football-data's attribution line */
@@ -475,27 +479,29 @@ svg.mt { display: block; }
 .mt-zero { fill: rgba(244,245,255,.5); }
 .verdict { color: var(--text); font-weight: 600; }
 
-/* still to settle */
-.fxs { display: grid; gap: 10px; }
-.fxs.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .fxs.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.fxs.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } .fxs.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.fxs.cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.fx { position: relative; background: var(--tile); border-radius: var(--r-box); padding: 11px 12px 10px; min-width: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
-.fx:focus-visible { outline: 2px solid var(--you-t); outline-offset: 2px; }
-.fx-h { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-2); }
-.tm { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; }
-.tm .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
-.tm b { font-size: 16px; font-weight: 750; min-width: 12px; text-align: right; }
-.tm .bd { width: 26px; height: 26px; font-size: 9px; }
-.tm.mine .nm { color: var(--text); font-weight: 650; }
-.tm.mine { box-shadow: inset 2px 0 0 var(--you-t); margin-left: -12px; padding-left: 10px; }
-.fx-f { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--hair); }
-.fx-tip { display: none; position: absolute; z-index: 20; left: 8px; top: calc(100% + 6px); width: 230px; background: #222226; border: 1px solid var(--hair-2); border-radius: var(--r-box); padding: 9px 11px; font-size: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.6); pointer-events: none; }
-.fx:hover .fx-tip, .fx:focus-visible .fx-tip { display: block; }
-.fx-tip b { display: block; font-size: 13px; font-weight: 650; margin-bottom: 5px; }
-.fx-tip .row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-2); line-height: 1.6; }
-.fx-tip .row strong { font-weight: 700; }
-.fx-tip .note { color: var(--text-3); margin-top: 4px; line-height: 1.45; }
+/* still to settle: each open parlay, with a line for each leg */
+.ops { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(440px, 100%), 1fr)); gap: 10px; align-items: start; }
+.op { background: var(--tile); border-radius: var(--r-box); padding: 12px 14px 4px; min-width: 0; }
+.op-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--hair); }
+.op-l { min-width: 0; }
+.op-t { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.op-t h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.op-wk { font-size: 12px; color: var(--text-2); }
+.op-meta { margin: 4px 0 0; font-size: 12px; color: var(--text-3); }
+.op .payout b { font-size: 17px; font-weight: 700; }
+.ols { list-style: none; margin: 0; padding: 0; }
+.ol { display: grid; grid-template-columns: 44px minmax(0, 1fr) 52px 150px; align-items: center; column-gap: 10px; padding: 8px 0; font-size: 13px; }
+.ol + .ol { border-top: 1px solid var(--hair); }
+.ol-pick { display: flex; align-items: center; }
+.ol-game { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+.ol-game .mine { color: var(--text); font-weight: 650; }
+.ol-game .v { color: var(--text-3); white-space: pre; }
+.ol-game .sc { font-weight: 750; color: var(--text); white-space: pre; }
+.ol-odds { text-align: right; font-size: 12px; font-weight: 650; color: var(--text-2); }
+.ol-st { display: flex; justify-content: flex-end; min-width: 0; font-size: 12px; }
+.ol-st .st { font-size: 12px; }
+.ol-when { color: var(--text-3); white-space: nowrap; }
+.ol-live { display: inline-flex; align-items: center; gap: 8px; }
 
 /* how your legs finished */
 .donut { display: flex; flex-direction: column; align-items: center; gap: 18px; }

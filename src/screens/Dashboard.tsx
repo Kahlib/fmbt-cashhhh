@@ -2,22 +2,22 @@
 // real numbers. Everything on it comes from src/lib/stats/, worked out in
 // the browser from the weeks and fixtures LiveData already holds, so this
 // page fetches nothing of its own except your backup's status.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useAdmin } from '../components/admin.ts'
 import { Bankroll, ChartFilters, ConfidenceColumns, Donut, Ladder, MoneyBars, Progress, Radar, Ring, Stack, Strip } from '../components/charts/Charts.tsx'
-import { useWidth } from '../components/charts/size.ts'
 import { Button, Hint } from '../components/Controls.tsx'
 import { PageHead } from '../components/Layout.tsx'
-import { LiveMinute, TeamBadge } from '../components/Parlay.tsx'
+import { LiveMinute, ParlayStatus, Payout, TeamBadge } from '../components/Parlay.tsx'
+import { StatusIcon } from '../components/Icons.tsx'
 import { Reminder } from '../components/Reminder.tsx'
 import type { AccountApi } from '../lib/account/api.ts'
 import { backupStatus, type BackupStatus } from '../lib/account/backup.ts'
 import type { Unlocked } from '../lib/account/wraps.ts'
-import { legState, weekSentence, weekSummary } from '../lib/bets/view.ts'
+import { legState, legWords, openParlays, parlayMeta, weekSentence, weekSummary, type OpenParlay } from '../lib/bets/view.ts'
 import type { Competition, Leg } from '../lib/bets/week-record.ts'
 import { visibleWeeks } from '../lib/bets/weeks.ts'
 import type { Fixture } from '../lib/fixtures.ts'
-import { dayAndTime, oddsText, pointsText, returnText, signedMoney, wholePercent } from '../lib/format.ts'
+import { count, dayAndTime, oddsText, pointsText, returnText, signedMoney, wholePercent } from '../lib/format.ts'
 import { editable, weekToOpen, type LiveData, type LiveSnapshot } from '../lib/live.ts'
 import { nameOf, teamNames, type Names } from '../lib/names.ts'
 import { periodName } from '../lib/periods.ts'
@@ -128,7 +128,7 @@ export function Dashboard({ live, snapshot, api, unlocked, onBuild, onSettings }
 
         <section className="panel span-4 wide" aria-labelledby="odds-title">
           <h2 className="ptitle" id="odds-title">You against the odds</h2>
-          <p className="sub">How often your picks land, against what the odds gave them once the bookmaker's cut is taken out.</p>
+          <p className="sub">How often your picks land, against the chance bet365's odds gave them, less the margin built into its prices.</p>
           {nothing ? <Hint>Nothing has settled yet.</Hint> : (
             <>
               <div className="rings">
@@ -228,96 +228,86 @@ export function Dashboard({ live, snapshot, api, unlocked, onBuild, onSettings }
 }
 
 // ---------------------------------------------------------------------------
-// Still to settle: a tile for each leg that hasn't finished
+// Still to settle: each parlay that can still cash, with its legs (step 11
+// plan, 11.5)
 // ---------------------------------------------------------------------------
 
-type OpenLeg = { leg: Leg; competition: Competition; parlay: number; place: number; of: number; fixture: Fixture | undefined }
-
-function openLegs(snapshot: LiveSnapshot, filter: Filter): OpenLeg[] {
-  const legs: OpenLeg[] = []
-  for (const loaded of visibleWeeks(snapshot.weeks)) {
-    if (filter !== 'all' && loaded.week.competition !== filter) continue
-    loaded.record.parlays.forEach((parlay, p) => parlay.legs.forEach((leg, l) => {
-      if (leg.settlement === null) legs.push({ leg, competition: loaded.week.competition, parlay: p + 1, place: l + 1, of: parlay.legs.length, fixture: snapshot.fixtures.get(leg.fixtureId) })
-    }))
-  }
-  // The ones being played first, then by kick-off.
-  const playing = (each: OpenLeg) => (each.fixture !== undefined && legState(each.leg, each.fixture).kind === 'live' ? 0 : 1)
-  return legs.sort((a, b) => playing(a) - playing(b) || a.leg.kickoff.localeCompare(b.leg.kickoff))
-}
-
-const SHOWN = 12
+const SHOWN = 6
 
 function StillToSettle({ snapshot, filter, names }: { snapshot: LiveSnapshot; filter: Filter; names: Names }) {
-  const [ref, width] = useWidth<HTMLDivElement>(1000)
-  const legs = openLegs(snapshot, filter)
-  const shown = legs.slice(0, SHOWN)
-  // Columns from the width, tiles at least 188px wide, then balanced so no
-  // tile sits alone on a row.
-  const most = Math.min(6, Math.max(2, Math.floor((width + 10) / 188)))
-  const rows = Math.ceil(shown.length / most)
-  const columns = shown.length > most ? Math.ceil(shown.length / rows) : most
-  const live = legs.filter(each => each.fixture !== undefined && legState(each.leg, each.fixture).kind === 'live').length
+  const parlays = openParlays(visibleWeeks(snapshot.weeks), snapshot.fixtures, filter)
+  const toPlay = parlays.flatMap(each => each.legs.filter(leg => leg.settlement === null))
+  const live = toPlay.filter(leg => legState(leg, snapshot.fixtures.get(leg.fixtureId)).kind === 'live').length
   return (
     <section className="panel span-12" aria-labelledby="open-title">
       <div className="ph-row">
         <h2 className="ptitle" id="open-title">Still to settle</h2>
-        <div className="legend"><span><i className="sw-pick" />Your pick</span><span>{legs.length === 1 ? '1 leg' : `${legs.length} legs`}{live > 0 ? `, ${live} live` : ''}</span></div>
+        <div className="legend">
+          <span><i className="sw-pick" />Your pick</span>
+          <span>{count(parlays.length, 'parlay', 'parlays')}, {count(toPlay.length, 'leg', 'legs')} to play{live > 0 ? `, ${live} live` : ''}</span>
+        </div>
       </div>
-      <p className="sub">Your legs that haven't finished yet. A level score loses a leg unless you picked the draw.</p>
-      <div ref={ref}>
-        {legs.length === 0 ? <Hint>Every leg you've logged has settled.</Hint> : (
-          <div className={`fxs cols-${columns}`}>
-            {shown.map(each => <Tile key={each.leg.id} open={each} names={names} />)}
-          </div>
-        )}
-      </div>
-      {legs.length > SHOWN && <Hint>{legs.length - SHOWN} more in My parlays.</Hint>}
+      <p className="sub">Your parlays that can still cash, and how each leg stands. A level score loses a leg unless you picked the draw.</p>
+      {parlays.length === 0 ? <Hint>Every parlay you've logged has settled.</Hint> : (
+        <div className="ops">
+          {parlays.slice(0, SHOWN).map(each => <OpenParlayBox key={each.view.parlay.id} open={each} fixtures={snapshot.fixtures} names={names} />)}
+        </div>
+      )}
+      {parlays.length > SHOWN && <Hint>{parlays.length - SHOWN} more in My parlays.</Hint>}
     </section>
   )
 }
 
-function Tile({ open, names }: { open: OpenLeg; names: Names }) {
-  const { leg, fixture } = open
+function OpenParlayBox({ open, fixtures, names }: { open: OpenParlay; fixtures: ReadonlyMap<number, Fixture>; names: Names }) {
+  const { view, week, legs } = open
+  const titleId = `open-${view.parlay.id}`
+  return (
+    <section className="op" aria-labelledby={titleId}>
+      <div className="op-h">
+        <div className="op-l">
+          <div className="op-t">
+            <h3 id={titleId}>Parlay {view.number}</h3>
+            <span className="op-wk">{periodName(week.period)}</span>
+            <span className="tag">{week.competition}</span>
+            <ParlayStatus view={view} />
+          </div>
+          <p className="op-meta">{parlayMeta(view)}</p>
+        </div>
+        <Payout view={view} />
+      </div>
+      <ul className="ols">
+        {legs.map(leg => <OpenLeg key={leg.id} leg={leg} fixture={fixtures.get(leg.fixtureId)} names={names} />)}
+      </ul>
+    </section>
+  )
+}
+
+// One leg on a line: your pick, the game with the score once it's started,
+// the odds, and how it stands, which is the kick-off until it starts.
+function OpenLeg({ leg, fixture, names }: { leg: Leg; fixture: Fixture | undefined; names: Names }) {
   const state = legState(leg, fixture)
   const score = state.kind === 'live' || state.kind === 'final' ? state.score : null
-  let words = 'Not started'
-  let toneClass = 'none'
-  let note = `Kicks off ${dayAndTime(leg.kickoff)} your time.`
-  if (state.kind === 'live') {
-    words = state.standing === 'on track' ? 'On track' : state.standing === 'level' ? 'Level' : 'Behind'
-    toneClass = state.standing === 'on track' ? 'good' : state.standing === 'level' ? 'warn' : 'bad'
-    note = state.standing === 'on track' ? 'Winning right now.' : state.standing === 'level' ? 'Level right now. A draw would lose this leg.' : 'Losing right now.'
-  } else if (state.kind === 'final') {
-    words = 'Finished, settling now'
-    note = 'Finished. It settles at the next refresh.'
-  } else if (state.kind === 'waiting') {
-    words = 'Waiting for you'
-    toneClass = 'you'
-    note = 'Its match didn\'t finish normally. Choose what happened in My parlays.'
+  const pickName = leg.pick === 'D' ? 'the draw' : nameOf(names, leg.pick === 'H' ? leg.home : leg.away)
+  const team = (code: string, mine: boolean) => <span className={mine ? 'mine' : undefined}>{nameOf(names, code)}</span>
+  let now: ReactNode
+  if (state.kind === 'not started') now = <span className="ol-when">{dayAndTime(leg.kickoff)}</span>
+  else {
+    const { tone, icon, text } = legWords(state, null)
+    const words = <span className={`st ${tone}`}>{icon !== null && <StatusIcon kind={icon} />}{text}</span>
+    now = state.kind === 'live' ? <span className="ol-live"><LiveMinute minute={state.minute} halfTime={state.halfTime} />{words}</span> : words
   }
-  const pickName = leg.pick === 'D' ? 'Draw' : nameOf(names, leg.pick === 'H' ? leg.home : leg.away)
-  const team = (code: string, side: 'H' | 'A', goals: number | undefined) => (
-    <div className={leg.pick === side ? 'tm mine' : 'tm'}>
-      <TeamBadge code={code} mine={leg.pick === side} /><span className="nm">{nameOf(names, code)}</span>{goals !== undefined && <b>{goals}</b>}
-    </div>
-  )
   return (
-    <div className="fx" tabIndex={0} aria-label={`${nameOf(names, leg.home)} v ${nameOf(names, leg.away)}. Your pick: ${pickName}, at ${oddsText(leg.odds)}. ${words}. Leg ${open.place} of ${open.of} in parlay ${open.parlay}.`}>
-      <div className="fx-h">
-        <span className="tag">{open.competition}</span>
-        {state.kind === 'live' ? <LiveMinute minute={state.minute} halfTime={state.halfTime} /> : <span>{dayAndTime(leg.kickoff)}</span>}
-      </div>
-      {team(leg.home, 'H', score?.[0])}
-      {team(leg.away, 'A', score?.[1])}
-      <div className="fx-f"><span className={`st ${toneClass}`}>{words}</span><span>Leg {open.place} of {open.of}</span></div>
-      <div className="fx-tip" aria-hidden="true">
-        <b>{nameOf(names, leg.home)} v {nameOf(names, leg.away)}</b>
-        <div className="row"><span>Your pick</span><strong className="you-t">{pickName}</strong></div>
-        <div className="row"><span>Odds</span><strong>{oddsText(leg.odds)}</strong></div>
-        <div className="note">{note} Leg {open.place} of {open.of} in parlay {open.parlay}.</div>
-      </div>
-    </div>
+    <li className="ol">
+      <span className="ol-pick">{leg.pick === 'D' ? <span className="pick-draw">Draw</span> : <TeamBadge code={leg.pick === 'H' ? leg.home : leg.away} mine />}</span>
+      <span className="ol-game">
+        <span className="sr-only">Your pick: {pickName}. </span>
+        {team(leg.home, leg.pick === 'H')}
+        {score === null ? <span className="v"> v </span> : <b className="sc"> {score[0]}–{score[1]} </b>}
+        {team(leg.away, leg.pick === 'A')}
+      </span>
+      <span className="ol-odds"><span className="sr-only">At </span>{oddsText(leg.odds)}</span>
+      <span className="ol-st">{now}</span>
+    </li>
   )
 }
 

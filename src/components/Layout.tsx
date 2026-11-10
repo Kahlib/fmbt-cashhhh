@@ -2,7 +2,7 @@
 // (signed out, and signed in with the sidebar), screen titles and the
 // setup step bar.
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ChartIcon, ClockIcon, DashboardIcon, ListIcon, SlidersIcon } from './Icons.tsx'
+import { BackIcon, ChartIcon, ClockIcon, DashboardIcon, ListIcon, SlidersIcon } from './Icons.tsx'
 import type { Admin } from './admin.ts'
 import { AdminBanner } from './AdminMode.tsx'
 
@@ -88,10 +88,19 @@ export function AppFrame({ page, onNavigate, admin, seasonName, children }: {
 
 // A signed-in page's heading, with the Admin tag beside it while Admin mode
 // is on, the sentence under it, and what sits at its right.
-export function PageHead({ title, status, admin, right }: { title: string; status?: ReactNode; admin: Admin; right?: ReactNode }) {
+// `back` puts a button above the title that goes back where you came from,
+// where people look for one (step 11 plan, 11.5).
+export function PageHead({ title, status, admin, right, back }: {
+  title: string
+  status?: ReactNode
+  admin: Admin
+  right?: ReactNode
+  back?: { label: string; onClick: () => void }
+}) {
   return (
     <div className="topbar">
       <div>
+        {back !== undefined && <button type="button" className="back-btn" onClick={back.onClick}><BackIcon />{back.label}</button>}
         <div className="title-row">
           <ScreenTitle>{title}</ScreenTitle>
           {admin.on && <span className="adm-tag">Admin</span>}

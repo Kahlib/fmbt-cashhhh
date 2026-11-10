@@ -267,7 +267,7 @@ export function MyParlays({ live, snapshot, competition, onCompetition, period, 
             <div className="empty">
               <b>No parlays logged for {name}</b>
               {kickoffs.length > 0 && <p className="sub">{weekGames.length === 1 ? 'Its game' : `Its ${weekGames.length} games`} {Date.parse(kickoffs[0]) > now ? `kick off from ${dayRange(kickoffs[0], kickoffs[0])}` : 'have started'}.</p>}
-              <Button onClick={onBuild}>Build parlay</Button>
+              <Button kind="primary" onClick={onBuild}>Build parlay</Button>
             </div>
           )}
         </section>
